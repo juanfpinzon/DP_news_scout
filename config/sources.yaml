@@ -1,1 +1,207 @@
-sources: []
+selector_presets:
+  generic_scrape: &generic_scrape
+    article: "article, .post, .card, .resource-item, .listing-item, .teaser, .summary-item"
+    title: "h1, h2, h3, h4, .title, .card-title, .teaser__title, .summary-item__title"
+    link: "a[href]"
+    date: "time, .date, .published, .post-date, .timestamp, .summary-item__date"
+    summary: "p, .excerpt, .summary, .description, .teaser__excerpt"
+  resource_scrape: &resource_scrape
+    article: "article, .resource-item, .resource-card, .listing-item, .card, li"
+    title: "h1, h2, h3, h4, .title, .card-title, .resource-card__title"
+    link: "a[href]"
+    date: "time, .date, .published, .post-date"
+    summary: "p, .excerpt, .summary, .description"
+  newsroom_scrape: &newsroom_scrape
+    article: "article, .post, .news-item, .story-card, .cmp-teaser, .card"
+    title: "h1, h2, h3, h4, .title, .card-title, .cmp-teaser__title"
+    link: "a[href]"
+    date: "time, .date, .published, .post-date, .news-date"
+    summary: "p, .excerpt, .summary, .description, .cmp-teaser__description"
+
+sources:
+  - name: Gartner Procurement Insights
+    url: "https://www.gartner.com/en/procurement/insights"
+    tier: 1
+    method: "scrape"
+    active: true
+    category: "analyst"
+    selectors: *generic_scrape
+
+  - name: McKinsey Operations Insights
+    url: "https://www.mckinsey.com/capabilities/operations/our-insights"
+    tier: 1
+    method: "scrape"
+    active: true
+    category: "consulting"
+    selectors: *generic_scrape
+
+  - name: Spend Matters
+    url: "https://spendmatters.com/feed/"
+    tier: 1
+    method: "rss"
+    active: true
+    category: "trade_media"
+
+  - name: CPO Rising
+    url: "https://cporising.com/feed/"
+    tier: 1
+    method: "rss"
+    active: true
+    category: "trade_media"
+
+  - name: Art of Procurement
+    url: "https://artofprocurement.libsyn.com/rss"
+    tier: 1
+    method: "rss"
+    active: true
+    category: "trade_media"
+
+  - name: Procurement Leaders
+    url: "https://procurementleaders.com/feed/"
+    tier: 1
+    method: "rss"
+    active: true
+    category: "community"
+
+  - name: SAP Ariba
+    url: "https://news.sap.com/tags/sap-ariba/"
+    tier: 2
+    method: "scrape"
+    active: true
+    category: "vendor"
+    selectors: *newsroom_scrape
+
+  - name: Archlet
+    url: "https://archlet.io/resources"
+    tier: 2
+    method: "scrape"
+    active: true
+    category: "vendor"
+    selectors: *resource_scrape
+
+  - name: Keelvar
+    url: "https://www.keelvar.com/blog"
+    tier: 2
+    method: "scrape"
+    active: true
+    category: "vendor"
+    selectors: *generic_scrape
+
+  - name: SpendHQ
+    url: "https://www.spendhq.com/resources/blog/"
+    tier: 2
+    method: "scrape"
+    active: true
+    category: "vendor"
+    selectors: *resource_scrape
+
+  - name: Coupa
+    url: "https://www.coupa.com/newsroom/"
+    tier: 2
+    method: "scrape"
+    active: true
+    category: "vendor"
+    selectors: *newsroom_scrape
+
+  - name: Ivalua
+    url: "https://www.ivalua.com/blog/"
+    tier: 2
+    method: "scrape"
+    active: true
+    category: "vendor"
+    selectors: *generic_scrape
+
+  - name: JAGGAER
+    url: "https://www.jaggaer.com/blog/"
+    tier: 2
+    method: "scrape"
+    active: true
+    category: "vendor"
+    selectors: *generic_scrape
+
+  - name: GEP
+    url: "https://www.gep.com/blog/mind"
+    tier: 2
+    method: "scrape"
+    active: true
+    category: "vendor"
+    selectors: *resource_scrape
+
+  - name: Zip
+    url: "https://ziphq.com/blog"
+    tier: 2
+    method: "scrape"
+    active: true
+    category: "vendor"
+    selectors: *generic_scrape
+
+  - name: Sievo
+    url: "https://sievo.com/news"
+    tier: 2
+    method: "scrape"
+    active: true
+    category: "vendor"
+    selectors: *newsroom_scrape
+
+  - name: Procurious
+    url: "https://www.procurious.com/procurement-news"
+    tier: 2
+    method: "scrape"
+    active: true
+    category: "community"
+    selectors: *newsroom_scrape
+
+  - name: Supply Chain Digital
+    url: "https://supplychaindigital.com/"
+    tier: 2
+    method: "scrape"
+    active: true
+    category: "trade_media"
+    selectors: *generic_scrape
+
+  - name: HBR Digital Transformation
+    url: "https://hbr.org/topic/subject/digital-transformation"
+    tier: 3
+    method: "scrape"
+    active: true
+    category: "mainstream"
+    selectors: *generic_scrape
+
+  - name: CIO Digital Transformation
+    url: "https://www.cio.com/digital-transformation/"
+    tier: 3
+    method: "scrape"
+    active: true
+    category: "mainstream"
+    selectors: *newsroom_scrape
+
+  - name: BCG Operations Insights
+    url: "https://www.bcg.com/capabilities/operations/insights"
+    tier: 3
+    method: "scrape"
+    active: true
+    category: "consulting"
+    selectors: *generic_scrape
+
+  - name: Deloitte Digital Procurement
+    url: "https://www2.deloitte.com/us/en/pages/operations/solutions/digital-procurement-managed-services.html"
+    tier: 3
+    method: "scrape"
+    active: true
+    category: "consulting"
+    selectors: *generic_scrape
+
+  - name: Accenture Procurement
+    url: "https://www.accenture.com/us-en/services/supply-chain-management/sourcing-procurement"
+    tier: 3
+    method: "scrape"
+    active: true
+    category: "consulting"
+    selectors: *generic_scrape
+
+# Source discovery gaps from the PRD that should be revisited after the
+# initial fetcher hardening pass:
+# - Selectica / Determine
+# - Pirt
+# - Tirzo
+# - Forbes procurement / supply chain landing page

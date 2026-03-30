@@ -1,0 +1,15 @@
+agentmail
+beautifulsoup4
+feedparser
+httpx[http2]
+jinja2
+lxml
+openai
+premailer
+python-dotenv
+pyyaml
+sqlite-utils
+structlog
+
+[dev]
+pytest>=8.0

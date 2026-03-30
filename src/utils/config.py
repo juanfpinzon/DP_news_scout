@@ -32,6 +32,11 @@ class Settings:
     log_file: str
     dry_run: bool
     pipeline_timeout: int
+    fetch_concurrency: int
+    rss_lookback_hours: int
+    dedup_window_days: int
+    request_timeout_seconds: float
+    rate_limit_seconds: float
 
 
 @dataclass(slots=True)
@@ -39,8 +44,9 @@ class SourceConfig:
     name: str
     url: str
     tier: int | None = None
-    type: str | None = None
     method: str | None = None
+    active: bool = True
+    category: str | None = None
     selectors: dict[str, Any] | None = None
 
 
@@ -98,6 +104,31 @@ def load_config(env_file: Path | None = None) -> AppConfig:
         log_file=_get_str("LOG_FILE", settings_data, "log_file"),
         dry_run=_get_bool("DRY_RUN", settings_data, "dry_run"),
         pipeline_timeout=_get_int("PIPELINE_TIMEOUT", settings_data, "pipeline_timeout"),
+        fetch_concurrency=_get_int(
+            "FETCH_CONCURRENCY",
+            settings_data,
+            "fetch_concurrency",
+        ),
+        rss_lookback_hours=_get_int(
+            "RSS_LOOKBACK_HOURS",
+            settings_data,
+            "rss_lookback_hours",
+        ),
+        dedup_window_days=_get_int(
+            "DEDUP_WINDOW_DAYS",
+            settings_data,
+            "dedup_window_days",
+        ),
+        request_timeout_seconds=_get_float(
+            "REQUEST_TIMEOUT_SECONDS",
+            settings_data,
+            "request_timeout_seconds",
+        ),
+        rate_limit_seconds=_get_float(
+            "RATE_LIMIT_SECONDS",
+            settings_data,
+            "rate_limit_seconds",
+        ),
     )
     _validate_settings(settings)
 
@@ -158,6 +189,14 @@ def _get_bool(env_key: str, config: dict[str, Any], config_key: str) -> bool:
     raise ConfigError(f"Invalid boolean for '{config_key}': {value!r}")
 
 
+def _get_float(env_key: str, config: dict[str, Any], config_key: str) -> float:
+    value = os.getenv(env_key, config.get(config_key))
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"Invalid float for '{config_key}': {value!r}") from exc
+
+
 def _require_env(key: str) -> str:
     value = os.getenv(key)
     if value is None or value.strip() == "":
@@ -178,6 +217,16 @@ def _validate_settings(settings: Settings) -> None:
         raise ConfigError("log_level must be a valid Python logging level")
     if settings.pipeline_timeout <= 0:
         raise ConfigError("pipeline_timeout must be greater than 0")
+    if settings.fetch_concurrency <= 0:
+        raise ConfigError("fetch_concurrency must be greater than 0")
+    if settings.rss_lookback_hours <= 0:
+        raise ConfigError("rss_lookback_hours must be greater than 0")
+    if settings.dedup_window_days <= 0:
+        raise ConfigError("dedup_window_days must be greater than 0")
+    if settings.request_timeout_seconds <= 0:
+        raise ConfigError("request_timeout_seconds must be greater than 0")
+    if settings.rate_limit_seconds < 0:
+        raise ConfigError("rate_limit_seconds must be 0 or greater")
 
 
 def _build_sources(config: dict[str, Any]) -> list[SourceConfig]:
@@ -195,6 +244,16 @@ def _build_sources(config: dict[str, Any]) -> list[SourceConfig]:
             raise ConfigError(f"sources[{index}].name is required")
         if not _is_non_empty_string(source.url):
             raise ConfigError(f"sources[{index}].url is required")
+        if source.tier is None or source.tier <= 0:
+            raise ConfigError(f"sources[{index}].tier must be greater than 0")
+        if source.method not in {"rss", "scrape"}:
+            raise ConfigError(f"sources[{index}].method must be 'rss' or 'scrape'")
+        if not isinstance(source.active, bool):
+            raise ConfigError(f"sources[{index}].active must be a boolean")
+        if not _is_non_empty_string(source.category):
+            raise ConfigError(f"sources[{index}].category is required")
+        if source.selectors is not None and not isinstance(source.selectors, dict):
+            raise ConfigError(f"sources[{index}].selectors must be a mapping when provided")
         sources.append(source)
     return sources
 

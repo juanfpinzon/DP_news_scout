@@ -19,9 +19,13 @@ def test_load_config_reads_defaults() -> None:
     config = load_config()
 
     assert config.settings.max_articles_per_source == 10
+    assert config.settings.fetch_concurrency == 5
+    assert config.settings.rss_lookback_hours == 48
+    assert config.settings.dedup_window_days == 7
     assert config.settings.timezone == "Central European Time"
     assert config.settings.llm_model == "anthropic/claude-sonnet-4-6"
     assert config.settings.llm_model_fallback == "anthropic/claude-4-5-haiku"
+    assert len(config.sources) >= 20
     assert config.env.email_from == "news-scout@example.com"
 
 

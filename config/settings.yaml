@@ -10,3 +10,8 @@ log_level: "INFO"
 log_file: "data/logs/dpns.jsonl"
 dry_run: false
 pipeline_timeout: 600
+fetch_concurrency: 5
+rss_lookback_hours: 48
+dedup_window_days: 7
+request_timeout_seconds: 15
+rate_limit_seconds: 1.0
