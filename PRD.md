@@ -165,7 +165,7 @@ The digest should read like a **trusted advisor's morning brief**, not a raw RSS
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
-| D-01 | Send email daily at 9:00 AM ET to a configurable recipient list | P0 |
+| D-01 | Send email daily at 9:00 AM CET to a configurable recipient list | P0 |
 | D-02 | Use AgentMail for email delivery (supports bidirectional comms and agentic workflows) | P0 |
 | D-03 | Support a distribution list managed via config/env vars | P0 |
 | D-04 | Retry on send failure (up to 3 attempts with backoff) | P1 |

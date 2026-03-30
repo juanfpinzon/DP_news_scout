@@ -1,0 +1,12 @@
+max_articles_per_source: 10
+max_digest_items: 15
+relevance_threshold: 6
+digest_send_time: "09:00"
+timezone: "Central European Time"
+llm_model: "anthropic/claude-sonnet-4-6"
+llm_model_fallback: "anthropic/claude-4-5-haiku"
+database_path: "data/dpns.db"
+log_level: "INFO"
+log_file: "data/logs/dpns.jsonl"
+dry_run: false
+pipeline_timeout: 600

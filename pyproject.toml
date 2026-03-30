@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dpns"
+version = "0.1.0"
+description = "Digital Procurement News Scout daily digest pipeline"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "agentmail",
+  "beautifulsoup4",
+  "feedparser",
+  "httpx[http2]",
+  "jinja2",
+  "lxml",
+  "openai",
+  "premailer",
+  "python-dotenv",
+  "pyyaml",
+  "sqlite-utils",
+  "structlog",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+]
+
+[tool.setuptools.package-dir]
+"" = "."
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

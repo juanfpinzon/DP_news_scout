@@ -1,4 +1,4 @@
-# CLAUDE.md — Digital Procurement News Scout (DPNS)
+# AGENTS.md — Digital Procurement News Scout (DPNS)
 
 ## Project Summary
 
@@ -7,6 +7,9 @@ DPNS is a daily automated email digest that monitors 20+ procurement and digital
 Full context lives in:
 - **[PRD.md](PRD.md)** — product requirements, content strategy, email design spec, success metrics
 - **[PLAN.md](PLAN.md)** — phased implementation plan, task breakdown, dependency graph
+- **[CLAUDE.md](CLAUDE.md)** — original project guidance this file is derived from
+
+Use this file as the default orientation doc for coding agents working in this repository.
 
 ---
 
@@ -47,7 +50,8 @@ Entry point: `python -m src.main`
 
 ```
 dpns/
-├── CLAUDE.md                   # This file
+├── AGENTS.md                   # Agent-facing project guide
+├── CLAUDE.md                   # Original project guide
 ├── PRD.md                      # Product requirements
 ├── PLAN.md                     # Implementation plan
 ├── pyproject.toml
@@ -112,6 +116,17 @@ dpns/
 
 ---
 
+## Agent Working Norms
+
+- Prefer config-driven changes over hardcoding when working with sources, recipients, prompt text, thresholds, or schedule details.
+- Keep the pipeline stages decoupled; avoid introducing cross-stage coupling unless there is a strong operational reason.
+- Preserve local editability for non-developers, especially in `config/`, `prompts/`, and email template content.
+- Respect the existing source-ingestion constraints: RSS first, scraping only when needed, robots-aware, and rate-limited.
+- Treat email client compatibility as a product constraint, not a polish item.
+- When implementing features or reviews, reference PRD requirement IDs where possible (`F-xx`, `A-xx`, `E-xx`, `D-xx`, `S-xx`).
+
+---
+
 ## Environment Variables
 
 ```bash
@@ -172,7 +187,7 @@ docs: description
 chore: description
 ```
 
-Task IDs reference PLAN.md (e.g., `[2.1.2]` = Task 2.1.2 RSS parser).
+Task IDs reference `PLAN.md` (for example, `[2.1.2]` = Task 2.1.2 RSS parser).
 
 ---
 
