@@ -23,7 +23,7 @@ Digital Procurement senior leaders at PepsiCo need to stay current on procuremen
 - Team members surface articles ad-hoc in Slack/email — inconsistent, duplicated, incomplete
 
 **Desired outcome:**
-A daily, automated, executive-quality email briefing delivered at 9:00 AM (ET) that surfaces the most relevant procurement and digital transformation news, explains why each item matters to the team, and requires zero manual curation.
+A daily, automated, executive-quality email briefing delivered at 9:00 AM (CET) that surfaces the most relevant procurement and digital transformation news, explains why each item matters to the team, and requires zero manual curation.
 
 ---
 
@@ -138,7 +138,7 @@ The digest should read like a **trusted advisor's morning brief**, not a raw RSS
 | A-04 | Rank and categorize articles into Top Story / Key Dev / Radar / Quick Hits | P0 |
 | A-05 | Deduplicate semantically similar articles (not just URL match) | P1 |
 | A-06 | Limit total digest to ~12–15 items max to respect reader time | P0 |
-| A-07 | Fall back to OpenRouter (e.g., `anthropic/claude-sonnet`) if primary API fails | P1 |
+| A-07 | Support model fallback within OpenRouter (e.g., swap to a cheaper/faster model) if the primary model is unavailable | P1 |
 | A-08 | Include a system prompt that encodes PepsiCo Digital Procurement context | P0 |
 
 ### 4.3 Email Composition (Renderer)
@@ -158,7 +158,7 @@ The digest should read like a **trusted advisor's morning brief**, not a raw RSS
 | ID | Requirement | Priority |
 |----|-------------|----------|
 | D-01 | Send email daily at 9:00 AM ET to a configurable recipient list | P0 |
-| D-02 | Use a reliable email service (SendGrid, AWS SES, or Resend) | P0 |
+| D-02 | Use AgentMail for email delivery (supports bidirectional comms and agentic workflows) | P0 |
 | D-03 | Support a distribution list managed via config/env vars | P0 |
 | D-04 | Retry on send failure (up to 3 attempts with backoff) | P1 |
 | D-05 | Log delivery status per run | P0 |
@@ -209,7 +209,7 @@ The digest should read like a **trusted advisor's morning brief**, not a raw RSS
                        ▼
 ┌─────────────────────────────────────────────────────────┐
 │              2. DIGEST ENGINE                           │
-│  - Claude API (primary) / OpenRouter (fallback)         │
+│  - OpenRouter API (`openai` SDK, custom base_url)       │
 │  - Relevance scoring + filtering                        │
 │  - Summary + "Why it matters" generation                │
 │  - Categorization + ranking                             │
@@ -228,7 +228,7 @@ The digest should read like a **trusted advisor's morning brief**, not a raw RSS
                        ▼
 ┌─────────────────────────────────────────────────────────┐
 │              4. SENDER MODULE                           │
-│  - SendGrid / AWS SES / Resend API                      │
+│  - AgentMail API                                        │
 │  - Reads recipient_list from config                     │
 │  - Retry logic + delivery logging                       │
 │  - Output: delivery_log entry                           │
@@ -241,9 +241,9 @@ The digest should read like a **trusted advisor's morning brief**, not a raw RSS
 |-------|-----------|-----------|
 | Language | Python 3.11+ | Best ecosystem for scraping, LLM APIs, email |
 | Scraping | `httpx` + `beautifulsoup4` + `feedparser` | Async HTTP, robust HTML parsing, RSS native |
-| LLM | `anthropic` SDK (primary), `openai` SDK for OpenRouter (fallback) | Direct Claude API access + fallback flexibility |
+| LLM | `openai` SDK via OpenRouter (`base_url="https://openrouter.ai/api/v1"`) | Single gateway to all models; model swappable via config |
 | Email template | MJML → compiled HTML, or Jinja2 + inline CSS | MJML guarantees email client compatibility |
-| Email sending | Resend or SendGrid | Simple API, good deliverability, free tiers |
+| Email sending | AgentMail | Built for AI agents; bidirectional email; simple Python SDK; free tier available |
 | Scheduling | GitHub Actions cron / Railway cron / `crontab` on a VPS | Zero-infra option (GH Actions) or cheap VPS |
 | Storage | SQLite (local) or Supabase (hosted) | Article dedup, run history, delivery logs |
 | Config | YAML files + `.env` for secrets | Human-readable, easy to edit |
@@ -375,4 +375,4 @@ This allows non-developers to refine the editorial voice without touching code.
 3. **Known platforms in use** — Which S2P/P2P platforms is the team currently using? (Helps tailor the "Why it matters" angle)
 4. **Recipient management** — Self-serve subscribe/unsubscribe, or admin-managed list?
 5. **Content approval** — Should there be a human review step before sending (at least for the first few weeks)?
-6. **API keys** — Will the team provide an Anthropic API key, or should we use OpenRouter?
+6. **API keys** — Who will provision the OpenRouter API key and manage model/spend limits?

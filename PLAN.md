@@ -5,7 +5,7 @@
 This plan breaks the DPNS project into phases, epics, and individual tasks sized for Claude Code sessions. Each task is designed to be completable in a single coding session with clear inputs/outputs.
 
 **Estimated total effort:** 5–7 days of focused development
-**Tech stack:** Python 3.11+ · httpx · feedparser · BeautifulSoup4 · Anthropic SDK · Jinja2 · Resend · SQLite · GitHub Actions
+**Tech stack:** Python 3.11+ · httpx · feedparser · BeautifulSoup4 · openai SDK (via OpenRouter) · Jinja2 · AgentMail · SQLite · GitHub Actions
 
 ---
 
@@ -38,7 +38,7 @@ dpns/
 │   │   ├── __init__.py
 │   │   ├── relevance.py        # Relevance scoring via LLM
 │   │   ├── digest.py           # Digest composition via LLM
-│   │   └── llm_client.py       # Claude API + OpenRouter fallback
+│   │   └── llm_client.py       # OpenRouter LLM client (openai SDK)
 │   ├── renderer/
 │   │   ├── __init__.py
 │   │   ├── html_email.py       # HTML email builder
@@ -82,9 +82,9 @@ dpns/
 Create the directory structure above.
 Set up pyproject.toml with dependencies:
   - httpx[http2], feedparser, beautifulsoup4, lxml
-  - anthropic, OpenRouter
+  - openai (used as OpenRouter client)
   - jinja2, premailer (CSS inlining)
-  - resend (email)
+  - agentmail (email)
   - pyyaml, python-dotenv
   - sqlite-utils
   - structlog
@@ -106,8 +106,8 @@ Create config/settings.yaml with defaults:
   - relevance_threshold: 6 (out of 10)
   - digest_send_time: "09:00"
   - timezone: "America/New_York"
-  - llm_primary: "claude-sonnet-4-20250514"
-  - llm_fallback: "anthropic/claude-3.5-sonnet" (OpenRouter)
+  - llm_model: "anthropic/claude-sonnet-4-5"     # primary model via OpenRouter
+  - llm_model_fallback: "anthropic/claude-3-5-haiku" # cheaper fallback if primary unavailable
 ```
 
 **Task 1.1.3: Logging setup**
@@ -211,12 +211,13 @@ Build src/fetcher/__init__.py with fetch_all_sources():
 **Task 3.1.1: LLM client with fallback**
 ```
 Build src/analyzer/llm_client.py:
-  - class LLMClient with primary (Anthropic) and fallback (OpenRouter) 
+  - class LLMClient using openai SDK pointed at OpenRouter:
+      client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1")
   - Method: async complete(system_prompt, user_prompt, max_tokens) -> str
-  - Auto-fallback: if Anthropic call fails (timeout, rate limit, 500), try OpenRouter
+  - Model configured via settings.yaml (llm_model); falls back to llm_model_fallback if primary returns 429/503
   - Token tracking: log input/output tokens per call
-  - Retry: 2 attempts per provider with exponential backoff
-  - Cost estimation: log estimated cost per call
+  - Retry: 3 attempts with exponential backoff
+  - Cost estimation: log estimated cost per call (using OpenRouter /api/v1/generation metadata)
 ```
 
 **Task 3.1.2: Context preamble prompt**
@@ -354,12 +355,12 @@ Build scripts/test_email.py:
 Build src/sender/email_sender.py:
   - function send_digest(html: str, plaintext: str, subject: str) -> bool
   - Load recipients from config/recipients.yaml
-  - Use Resend API (or SendGrid as alternative):
-    - From: configurable sender address
-    - To: recipient list (BCC for privacy)
-    - Subject: "🔍 Procurement News Scout · [Date] · Issue #[N]"
-    - HTML body + plain-text fallback
-  - Retry: 3 attempts, exponential backoff
+  - Use AgentMail SDK (pip install agentmail):
+    - Initialize AgentMail(api_key=AGENTMAIL_API_KEY)
+    - Create or reuse a named inbox (client_id for idempotency)
+    - Call client.inboxes.messages.send(inbox_id, to=..., bcc=..., subject=..., html=..., text=...)
+    - BCC all recipients for privacy; use configurable FROM inbox
+  - Retry: 3 attempts, exponential backoff (AgentMail auto-retries 408/429/5xx)
   - Log: delivery status, errors, recipient count
   - Return success/failure
 
@@ -405,7 +406,7 @@ Create .github/workflows/daily_digest.yml:
     2. Setup Python 3.11
     3. Install dependencies
     4. Run pipeline: python -m src.main
-  - Secrets: ANTHROPIC_API_KEY, OPENROUTER_API_KEY, RESEND_API_KEY, etc.
+  - Secrets: OPENROUTER_API_KEY, AGENTMAIL_API_KEY, AGENTMAIL_INBOX_ID, EMAIL_FROM, etc.
   - Notifications: alert on failure (GitHub notifications or Slack webhook)
 
 Alternative: Railway/Render cron job config if self-hosted.
@@ -586,11 +587,11 @@ chore: description
 
 ```bash
 # LLM APIs
-ANTHROPIC_API_KEY=sk-ant-...
 OPENROUTER_API_KEY=sk-or-...
 
 # Email
-RESEND_API_KEY=re_...
+AGENTMAIL_API_KEY=...
+AGENTMAIL_INBOX_ID=...   # ID of the sending inbox created in AgentMail console
 EMAIL_FROM=news-scout@yourdomain.com
 
 # Optional
@@ -605,7 +606,7 @@ PIPELINE_TIMEOUT=600
 
 | Item | Estimate |
 |------|----------|
-| Claude API (~15 articles/day × 30 days, scoring + composition) | ~$15–25 |
+| OpenRouter API (~15 articles/day × 22 weekdays, scoring + composition) | ~$15–25 |
 | Resend (free tier: 3,000 emails/month) | $0 |
 | GitHub Actions (free tier: 2,000 min/month) | $0 |
 | Domain for email sender (optional) | ~$12/year |

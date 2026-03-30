@@ -23,7 +23,7 @@ Fetcher → Analyzer → Renderer → Sender
 | Fetcher | `src/fetcher/` | RSS + web scraping, dedup, SQLite persistence |
 | Analyzer | `src/analyzer/` | LLM relevance scoring + digest composition |
 | Renderer | `src/renderer/` | HTML email (Jinja2 + premailer) + plain-text fallback |
-| Sender | `src/sender/` | Resend API delivery with retry logic |
+| Sender | `src/sender/` | AgentMail API delivery with retry logic |
 
 Entry point: `python -m src.main`
 
@@ -33,9 +33,9 @@ Entry point: `python -m src.main`
 
 - **Python 3.11+**
 - **httpx** (async HTTP) + **feedparser** (RSS) + **beautifulsoup4** (HTML scraping)
-- **anthropic** SDK pointed at OpenRouter — single LLM gateway for all model calls
+- **openai** SDK via OpenRouter (`base_url="https://openrouter.ai/api/v1"`) — single LLM gateway for all model calls
 - **Jinja2** + **premailer** (email template + CSS inlining)
-- **Resend** (email delivery)
+- **AgentMail** (email delivery — `pip install agentmail`)
 - **SQLite** via **sqlite-utils** (article storage, run logs, delivery logs)
 - **structlog** (structured logging)
 - **pyyaml** + **python-dotenv** (config)
@@ -65,7 +65,7 @@ dpns/
 │   ├── fetcher/                # RSS, scraping, dedup, registry
 │   ├── analyzer/               # LLM client, relevance scoring, digest composition
 │   ├── renderer/               # HTML + plain-text email builders
-│   ├── sender/                 # Resend integration
+│   ├── sender/                 # AgentMail integration
 │   ├── storage/                # SQLite schema and helpers
 │   └── utils/                  # Config loader, structured logging
 ├── templates/
@@ -117,7 +117,8 @@ dpns/
 ```bash
 # Required
 OPENROUTER_API_KEY=sk-or-...
-RESEND_API_KEY=re_...
+AGENTMAIL_API_KEY=...
+AGENTMAIL_INBOX_ID=...   # Sending inbox ID from AgentMail console
 EMAIL_FROM=news-scout@yourdomain.com
 
 # Optional
@@ -191,8 +192,8 @@ Reference these IDs when building or reviewing features:
 
 ## Cost Targets
 
-- Claude API: ~$15–25/month (scoring + composition, ~15 articles/day × 22 weekdays)
-- Email delivery (Resend free tier): $0
+- OpenRouter API: ~$15–25/month (scoring + composition, ~15 articles/day × 22 weekdays)
+- Email delivery (AgentMail free tier): $0
 - Scheduling (GitHub Actions free tier): $0
 - **Total target: < $50/month** (PRD NFR)
 
