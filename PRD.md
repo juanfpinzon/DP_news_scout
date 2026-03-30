@@ -60,7 +60,13 @@ Sources are grouped into tiers. The system should attempt all Tier 1 sources dai
 #### Tier 2 — Fetch daily, lower priority
 | Source | Type | Focus |
 |--------|------|-------|
-| SAP Ariba (blog/news) | Vendor | Platform updates, roadmap |
+| SAP / SAP Ariba (blog/news) | Vendor ★ | Platform updates, roadmap — **actively used** |
+| Archlet (blog/news) | Vendor ★ | Sourcing optimization — **actively used** |
+| Keelvar (blog/news) | Vendor ★ | Sourcing automation — **actively used** |
+| Selectica / Determine (blog/news) | Vendor ★ | Contract management — **actively used** |
+| SpendhQ (blog/news) | Vendor ★ | Spend analytics — **actively used** |
+| Pirt (blog/news) | Vendor ★ | Procurement platform — **actively used** |
+| Tirzo (blog/news) | Vendor ★ | Procurement platform — **actively used** |
 | Coupa (blog/news) | Vendor | Platform updates, benchmarks |
 | Ivalua (blog/news) | Vendor | Platform updates |
 | Jaggaer (blog/news) | Vendor | Platform updates |
@@ -69,6 +75,8 @@ Sources are grouped into tiers. The system should attempt all Tier 1 sources dai
 | Sievo (blog) | Vendor | Spend analytics, data insights |
 | Procurious | Community | Networking, opinions |
 | Supply Chain Digital | Trade media | Supply chain + procurement |
+
+> ★ = platform currently in use by the Digital Procurement team; score any news about these vendors +2 bonus relevance points.
 
 #### Tier 3 — Fetch if relevant articles detected
 | Source | Type | Focus |
@@ -256,8 +264,8 @@ The digest should read like a **trusted advisor's morning brief**, not a raw RSS
 
 The system prompt should encode:
 - Who the readers are (Digital Procurement leaders at a major CPG company)
-- What transformation they're executing full procurement pipeline (S2P/P2P digital transformation)
-- What platforms/vendors are in their ecosystem (tailor if known)
+- What transformation they're executing (full S2P/P2P digital transformation)
+- Platforms/vendors **actively in use**: SAP / SAP Ariba, Archlet, Keelvar, Selectica, SpendhQ, Pirt, Tirzo — any news about these tools gets a +2 relevance bonus
 - Scoring rubric: 1–10 relevance with reasoning
 
 ### 7.2 Digest Composition Prompt
@@ -368,11 +376,13 @@ This allows non-developers to refine the editorial voice without touching code.
 
 ---
 
-## 12. Open Questions
+## 12. Decisions & Resolved Questions
 
-1. **Sender identity** — Should the email come from a team alias (e.g., `dpns@pepsico.com`) or a SaaS sender?
-2. **Internal vs. external hosting** — Can we use cloud services or must this run within PepsiCo's infra?
-3. **Known platforms in use** — Which S2P/P2P platforms is the team currently using? (Helps tailor the "Why it matters" angle)
-4. **Recipient management** — Self-serve subscribe/unsubscribe, or admin-managed list?
-5. **Content approval** — Should there be a human review step before sending (at least for the first few weeks)?
-6. **API keys** — Who will provision the OpenRouter API key and manage model/spend limits?
+| # | Question | Decision |
+|---|----------|----------|
+| 1 | **Sender identity** | AgentMail inbox. `AGENTMAIL_INBOX_ID` is provided by the user at setup time — the setup process must prompt for it. |
+| 2 | **Internal vs. external hosting** | Fully external: GitHub Actions (scheduler) + OpenRouter (LLM) + AgentMail (email). No PepsiCo infra required. |
+| 3 | **Platforms in use** | SAP / SAP Ariba, Archlet, Keelvar, Selectica, SpendhQ, Pirt, Tirzo. Used to tailor the relevance scoring prompt and "Why it matters" context. |
+| 4 | **Recipient management** | Admin-managed config file (`config/recipients.yaml`) for v1. Self-serve subscribe/unsubscribe is a v2 enhancement. |
+| 5 | **Content approval** | No human review gate for v1. Revisit after PoC — manual spot-checks during the dry-run week (Task 7.1.1) will inform whether a review step is needed. |
+| 6 | **API keys** | Juan Pinzon provisions OpenRouter and AgentMail keys for development and PoC testing. Production key management and spend limits to be decided with Tatjana. |

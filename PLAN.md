@@ -229,9 +229,21 @@ Create prompts/context_preamble.md:
    Source-to-Pay (S2P) and Procure-to-Pay (P2P) platforms, leveraging
    AI/ML for procurement processes, and modernizing supplier management.
 
+   Platforms and tools currently in use by this team:
+   - SAP / SAP Ariba (S2P/P2P backbone)
+   - Archlet (sourcing optimization)
+   - Keelvar (sourcing automation)
+   - Selectica (contract management)
+   - SpendhQ (spend analytics)
+   - Pirt (procurement platform)
+   - Tirzo (procurement platform)
+
+   Any news, updates, or analysis about these specific platforms is
+   highly relevant and should receive a +2 bonus to its relevance score.
+
    The readers are VP and Director-level leaders who need to stay
    informed about:
-   - Procurement technology platform developments (SAP Ariba, Coupa, etc.)
+   - Procurement technology platform developments (especially platforms above)
    - AI/GenAI applications in procurement
    - Digital transformation best practices and case studies
    - Market moves (M&A, funding, partnerships in procuretech)
@@ -357,7 +369,9 @@ Build src/sender/email_sender.py:
   - Load recipients from config/recipients.yaml
   - Use AgentMail SDK (pip install agentmail):
     - Initialize AgentMail(api_key=AGENTMAIL_API_KEY)
-    - Create or reuse a named inbox (client_id for idempotency)
+    - Use inbox identified by AGENTMAIL_INBOX_ID env var
+      ⚠️  SETUP NOTE: prompt the user to provide their AGENTMAIL_INBOX_ID
+          (created in the AgentMail console) before the first run.
     - Call client.inboxes.messages.send(inbox_id, to=..., bcc=..., subject=..., html=..., text=...)
     - BCC all recipients for privacy; use configurable FROM inbox
   - Retry: 3 attempts, exponential backoff (AgentMail auto-retries 408/429/5xx)
@@ -365,8 +379,9 @@ Build src/sender/email_sender.py:
   - Return success/failure
 
 Create config/recipients.yaml:
-  - List of email addresses
+  - Admin-managed list of email addresses (v1)
   - Support groups (leadership, extended, test)
+  - Self-serve subscribe/unsubscribe is a v2 enhancement
 ```
 
 **Task 5.1.2: Pipeline orchestrator**
@@ -587,11 +602,14 @@ chore: description
 
 ```bash
 # LLM APIs
-OPENROUTER_API_KEY=sk-or-...
+OPENROUTER_API_KEY=sk-or-...   # Dev/PoC: provisioned by Juan Pinzon
+                                # Production: to be decided with Tatjana
 
 # Email
-AGENTMAIL_API_KEY=...
-AGENTMAIL_INBOX_ID=...   # ID of the sending inbox created in AgentMail console
+AGENTMAIL_API_KEY=...           # Dev/PoC: provisioned by Juan Pinzon
+AGENTMAIL_INBOX_ID=...          # ⚠️  Must be provided by user at setup
+                                #    Create a sending inbox in the AgentMail
+                                #    console and paste the ID here.
 EMAIL_FROM=news-scout@yourdomain.com
 
 # Optional
