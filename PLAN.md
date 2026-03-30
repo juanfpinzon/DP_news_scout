@@ -77,7 +77,7 @@ dpns/
 
 ### Epic 1.1 — Project Setup
 
-**Task 1.1.1: Initialize project structure**
+**Task 1.1.1: Initialize project structure** ✅
 ```
 Create the directory structure above.
 Set up pyproject.toml with dependencies:
@@ -92,7 +92,7 @@ Create .env.example with all required env vars.
 Create a basic README.md.
 ```
 
-**Task 1.1.2: Config system**
+**Task 1.1.2: Config system** ✅
 ```
 Build src/utils/config.py:
   - Load settings.yaml, sources.yaml, recipients.yaml
@@ -110,7 +110,7 @@ Create config/settings.yaml with defaults:
   - llm_model_fallback: "anthropic/claude-4-5-haiku" # cheaper fallback if primary unavailable
 ```
 
-**Task 1.1.3: Logging setup**
+**Task 1.1.3: Logging setup** ✅
 ```
 Build src/utils/logging.py:
   - structlog configuration
@@ -119,7 +119,7 @@ Build src/utils/logging.py:
   - Include timestamp, module, pipeline_stage in every log
 ```
 
-**Task 1.1.4: Database schema**
+**Task 1.1.4: Database schema** ✅
 ```
 Build src/storage/db.py:
   - SQLite database at data/dpns.db
@@ -136,7 +136,7 @@ Build src/storage/db.py:
 
 ### Epic 2.1 — Source Registry
 
-**Task 2.1.1: Build source registry**
+**Task 2.1.1: Build source registry** ✅
 ```
 Create config/sources.yaml with ALL sources:
   For each source, define:
@@ -157,7 +157,7 @@ Build src/fetcher/registry.py:
 Research and populate actual RSS feed URLs for all 20+ sources.
 ```
 
-**Task 2.1.2: RSS feed parser**
+**Task 2.1.2: RSS feed parser** ✅
 ```
 Build src/fetcher/rss.py:
   - async function fetch_rss(source: Source) -> list[RawArticle]
@@ -168,7 +168,7 @@ Build src/fetcher/rss.py:
   - Return normalized RawArticle dataclass
 ```
 
-**Task 2.1.3: Web scraper for non-RSS sources**
+**Task 2.1.3: Web scraper for non-RSS sources** ✅
 ```
 Build src/fetcher/scraper.py:
   - async function scrape_source(source: Source) -> list[RawArticle]
@@ -181,7 +181,7 @@ Build src/fetcher/scraper.py:
   - Return normalized RawArticle dataclass
 ```
 
-**Task 2.1.4: Deduplication**
+**Task 2.1.4: Deduplication** ✅
 ```
 Build src/fetcher/dedup.py:
   - URL normalization (strip tracking params, trailing slashes, www)
@@ -190,7 +190,7 @@ Build src/fetcher/dedup.py:
   - Return deduplicated list
 ```
 
-**Task 2.1.5: Fetcher orchestrator**
+**Task 2.1.5: Fetcher orchestrator** ✅
 ```
 Build src/fetcher/__init__.py with fetch_all_sources():
   - Load registry
