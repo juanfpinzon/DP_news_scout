@@ -12,6 +12,7 @@ from src.utils.config import AppConfig, Settings, load_config
 from src.utils.logging import get_logger
 
 DEFAULT_MAX_TOKENS = 2600
+MAX_JSON_ATTEMPTS = 2
 PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 
 
@@ -81,12 +82,31 @@ async def compose_digest(
 
     try:
         try:
-            response_text = await active_client.complete(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                max_tokens=max_tokens,
-            )
-            digest = _parse_digest_payload(response_text, selected_articles)
+            prompt_to_send = user_prompt
+            for attempt in range(1, MAX_JSON_ATTEMPTS + 1):
+                response_text = await active_client.complete(
+                    system_prompt=system_prompt,
+                    user_prompt=prompt_to_send,
+                    max_tokens=max_tokens,
+                )
+                try:
+                    digest = _parse_digest_payload(response_text, selected_articles)
+                    break
+                except DigestCompositionError as exc:
+                    if attempt >= MAX_JSON_ATTEMPTS or not _is_invalid_json_error(exc):
+                        raise
+
+                    logger.warning(
+                        "digest_composition_retrying_invalid_json",
+                        attempt=attempt,
+                        max_attempts=MAX_JSON_ATTEMPTS,
+                        selected_articles=len(selected_articles),
+                        error=str(exc),
+                    )
+                    prompt_to_send = _build_json_repair_prompt(
+                        original_prompt=user_prompt,
+                        invalid_response=response_text,
+                    )
         except Exception as exc:
             logger.error(
                 "digest_composition_failed",
@@ -306,7 +326,40 @@ def _unwrap_json_block(text: str) -> str:
     )
     if fenced:
         return fenced.group(1).strip()
+
+    embedded_fenced = re.search(
+        r"```(?:json)?\s*(.*?)\s*```",
+        stripped,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    if embedded_fenced:
+        return embedded_fenced.group(1).strip()
+
+    first_brace = stripped.find("{")
+    if first_brace >= 0:
+        decoder = json.JSONDecoder()
+        try:
+            payload, _end = decoder.raw_decode(stripped[first_brace:])
+        except json.JSONDecodeError:
+            return stripped
+        return json.dumps(payload, ensure_ascii=False)
+
     return stripped
+
+
+def _is_invalid_json_error(error: DigestCompositionError) -> bool:
+    return isinstance(error.__cause__, json.JSONDecodeError)
+
+
+def _build_json_repair_prompt(*, original_prompt: str, invalid_response: str) -> str:
+    return (
+        f"{original_prompt}\n\n"
+        "Your previous response was invalid JSON.\n"
+        "Return exactly one valid JSON object that matches the required schema.\n"
+        "Do not include markdown fences, commentary, or any text before or after the JSON.\n\n"
+        "Previous invalid response:\n"
+        f"{invalid_response}"
+    )
 
 
 def _load_prompt(filename: str) -> str:

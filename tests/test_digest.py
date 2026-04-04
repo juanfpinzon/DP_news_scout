@@ -16,6 +16,9 @@ class DummyLogger:
     def info(self, event: str, **kwargs) -> None:
         self.records.append((event, kwargs))
 
+    def warning(self, event: str, **kwargs) -> None:
+        self.records.append((event, kwargs))
+
 
 class FakeLLMClient:
     def __init__(self, responses: list[str]) -> None:
@@ -270,3 +273,94 @@ def test_compose_digest_limits_articles_before_prompting() -> None:
     assert "https://example.com/article-2" in prompt
     assert "https://example.com/article-3" in prompt
     assert "https://example.com/article-1" not in prompt
+
+
+def test_compose_digest_parses_embedded_fenced_json() -> None:
+    articles = [build_article(1, 10), build_article(2, 9)]
+    llm_client = FakeLLMClient(
+        [
+            """
+            Here is the digest:
+            ```json
+            {
+              "top_story": {
+                "url": "https://example.com/article-1",
+                "headline": "Top headline",
+                "summary": "Top summary.",
+                "why_it_matters": "Top implication.",
+                "source": "Source 1",
+                "date": "2026-04-01"
+              },
+              "key_developments": [],
+              "on_our_radar": [],
+              "quick_hits": [
+                {
+                  "url": "https://example.com/article-2",
+                  "one_liner": "Quick takeaway.",
+                  "source": "Source 2"
+                }
+              ]
+            }
+            ```
+            """
+        ]
+    )
+
+    async def run() -> Digest:
+        return await compose_digest(
+            articles,
+            llm_client=llm_client,
+            settings=build_settings(),
+            logger=DummyLogger(),
+        )
+
+    digest = asyncio.run(run())
+
+    assert digest.top_story.url == "https://example.com/article-1"
+    assert digest.quick_hits[0].url == "https://example.com/article-2"
+
+
+def test_compose_digest_retries_after_invalid_json_response() -> None:
+    articles = [build_article(1, 10), build_article(2, 9)]
+    logger = DummyLogger()
+    llm_client = FakeLLMClient(
+        [
+            "not valid json",
+            """
+            {
+              "top_story": {
+                "url": "https://example.com/article-1",
+                "headline": "Top headline",
+                "summary": "Top summary.",
+                "why_it_matters": "Top implication.",
+                "source": "Source 1",
+                "date": "2026-04-01"
+              },
+              "key_developments": [],
+              "on_our_radar": [],
+              "quick_hits": [
+                {
+                  "url": "https://example.com/article-2",
+                  "one_liner": "Quick takeaway.",
+                  "source": "Source 2"
+                }
+              ]
+            }
+            """,
+        ]
+    )
+
+    async def run() -> Digest:
+        return await compose_digest(
+            articles,
+            llm_client=llm_client,
+            settings=build_settings(),
+            logger=logger,
+        )
+
+    digest = asyncio.run(run())
+
+    assert digest.top_story.url == "https://example.com/article-1"
+    assert len(llm_client.calls) == 2
+    assert "Previous invalid response" in str(llm_client.calls[1]["user_prompt"])
+    assert any(event == "digest_composition_retrying_invalid_json" for event, _payload in logger.records)
