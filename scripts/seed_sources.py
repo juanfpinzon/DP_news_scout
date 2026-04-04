@@ -14,8 +14,10 @@ import argparse
 import asyncio
 import sys
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
+import feedparser
 import httpx
 from bs4 import BeautifulSoup
 
@@ -23,19 +25,24 @@ from bs4 import BeautifulSoup
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.fetcher.common import build_request_headers  # noqa: E402
+from src.fetcher.common import DomainRateLimiter, RobotsPolicy, build_request_headers  # noqa: E402
 from src.fetcher.models import Source  # noqa: E402
 from src.fetcher.registry import load_source_registry  # noqa: E402
 from src.fetcher.scraper import (  # noqa: E402
     FALLBACK_ARTICLE_SELECTOR,
     FALLBACK_LINK_SELECTOR,
     FALLBACK_TITLE_SELECTOR,
+    _fallback_anchor_scan,
     _looks_like_javascript_rendered_page,
+    _parse_article_containers,
 )
 
 # ---------------------------------------------------------------------------
 # Result model
 # ---------------------------------------------------------------------------
+
+VALIDATION_LOOKBACK_HOURS = 24 * 365
+
 
 @dataclass
 class SourceCheckResult:
@@ -45,6 +52,9 @@ class SourceCheckResult:
     error: str | None = None
     redirect_url: str | None = None
     content_length: int | None = None
+    articles_found: int = 0
+    feed_format: str | None = None
+    rss_entries_found: int = 0
     containers_found: int = 0
     titles_found: int = 0
     links_found: int = 0
@@ -68,11 +78,27 @@ async def check_source(
     client: httpx.AsyncClient,
     timeout: float,
     verbose: bool,
+    *,
+    rate_limiter: DomainRateLimiter | None = None,
+    robots_policy: RobotsPolicy | None = None,
 ) -> SourceCheckResult:
     result = SourceCheckResult(source=source)
     headers = build_request_headers(source.name, source.url)
 
     try:
+        if robots_policy is not None:
+            allowed = await robots_policy.allows(
+                client=client,
+                url=source.url,
+                user_agent=headers["User-Agent"],
+            )
+            if not allowed:
+                result.error = "Blocked by robots.txt"
+                return result
+
+        if rate_limiter is not None:
+            await rate_limiter.wait(source.url)
+
         response = await client.get(
             source.url,
             headers=headers,
@@ -90,47 +116,11 @@ async def check_source(
 
         result.reachable = True
 
-        if source.method != "scrape":
+        if source.method == "rss":
+            _check_rss_source(source=source, response=response, result=result)
             return result
 
-        # Test selectors for scrape sources
-        soup = BeautifulSoup(response.text, "html.parser")
-
-        article_sel = source.selectors.get("article", FALLBACK_ARTICLE_SELECTOR)
-        title_sel = source.selectors.get("title", FALLBACK_TITLE_SELECTOR)
-        link_sel = source.selectors.get("link", FALLBACK_LINK_SELECTOR)
-
-        containers = soup.select(article_sel)
-        result.containers_found = len(containers)
-
-        titles_found = 0
-        links_found = 0
-        for container in containers[:20]:
-            if container.select_one(title_sel):
-                titles_found += 1
-            # Check both child elements and the container itself (for <a> containers)
-            has_link = bool(container.select_one(link_sel))
-            if not has_link and container.name == "a" and container.get("href"):
-                has_link = True
-            if has_link:
-                links_found += 1
-        result.titles_found = titles_found
-        result.links_found = links_found
-
-        if result.containers_found == 0:
-            result.warnings.append("No article containers found with configured selectors")
-        elif titles_found == 0:
-            result.warnings.append(
-                f"Found {result.containers_found} containers but 0 titles — title selector may be wrong"
-            )
-        elif links_found == 0:
-            result.warnings.append(
-                f"Found {result.containers_found} containers but 0 links — link selector may be wrong"
-            )
-
-        if _looks_like_javascript_rendered_page(soup, response.text):
-            result.js_rendered = True
-            result.warnings.append("Page appears to require JavaScript rendering")
+        _check_scrape_source(source=source, response=response, result=result)
 
     except httpx.TimeoutException:
         result.error = "Timeout"
@@ -142,6 +132,96 @@ async def check_source(
         result.error = f"Unexpected: {type(exc).__name__}: {exc}"
 
     return result
+
+
+def _check_rss_source(
+    *,
+    source: Source,
+    response: httpx.Response,
+    result: SourceCheckResult,
+) -> None:
+    parsed_feed = feedparser.parse(response.content)
+    result.feed_format = getattr(parsed_feed, "version", None) or None
+    entries = getattr(parsed_feed, "entries", [])
+    result.rss_entries_found = len(entries)
+    result.articles_found = result.rss_entries_found
+
+    bozo_exception = getattr(parsed_feed, "bozo_exception", None)
+    if bozo_exception is not None and result.rss_entries_found == 0:
+        result.error = (
+            f"Malformed feed for {source.name}: "
+            f"{type(bozo_exception).__name__}: {bozo_exception}"
+        )
+        return
+
+    if result.feed_format is None:
+        result.warnings.append("RSS parser did not detect a valid feed format")
+    if result.rss_entries_found == 0:
+        result.warnings.append("Feed is reachable but returned 0 entries")
+
+
+def _check_scrape_source(
+    *,
+    source: Source,
+    response: httpx.Response,
+    result: SourceCheckResult,
+) -> None:
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    article_sel = source.selectors.get("article", FALLBACK_ARTICLE_SELECTOR)
+    title_sel = source.selectors.get("title", FALLBACK_TITLE_SELECTOR)
+    link_sel = source.selectors.get("link", FALLBACK_LINK_SELECTOR)
+
+    containers = soup.select(article_sel)
+    result.containers_found = len(containers)
+
+    titles_found = 0
+    links_found = 0
+    for container in containers[:20]:
+        if container.select_one(title_sel):
+            titles_found += 1
+        has_link = bool(container.select_one(link_sel))
+        if not has_link and container.name == "a" and container.get("href"):
+            has_link = True
+        if has_link:
+            links_found += 1
+    result.titles_found = titles_found
+    result.links_found = links_found
+
+    extracted_articles = _parse_article_containers(
+        soup=soup,
+        source=source,
+        now=datetime.now(timezone.utc),
+        lookback_hours=VALIDATION_LOOKBACK_HOURS,
+        max_articles=20,
+    )
+    if not extracted_articles:
+        extracted_articles = _fallback_anchor_scan(
+            soup=soup,
+            source=source,
+            now=datetime.now(timezone.utc),
+            lookback_hours=VALIDATION_LOOKBACK_HOURS,
+            max_articles=20,
+        )
+    result.articles_found = len(extracted_articles)
+
+    if result.containers_found == 0:
+        result.warnings.append("No article containers found with configured selectors")
+    elif titles_found == 0:
+        result.warnings.append(
+            f"Found {result.containers_found} containers but 0 titles; title selector may be wrong"
+        )
+    elif links_found == 0:
+        result.warnings.append(
+            f"Found {result.containers_found} containers but 0 links; link selector may be wrong"
+        )
+
+    if result.articles_found == 0:
+        result.warnings.append("Scraper did not extract any articles from the page")
+
+    if _looks_like_javascript_rendered_page(soup, response.text):
+        result.js_rendered = True
+        result.warnings.append("Page appears to require JavaScript rendering")
 
 
 async def validate_all(
@@ -156,12 +236,24 @@ async def validate_all(
 
     results: list[SourceCheckResult] = []
     semaphore = asyncio.Semaphore(5)
+    rate_limiter = DomainRateLimiter(1.0)
+    robots_policy = RobotsPolicy()
 
-    async with httpx.AsyncClient(follow_redirects=True) as client:
+    async with httpx.AsyncClient(
+        follow_redirects=True,
+        timeout=httpx.Timeout(timeout),
+    ) as client:
 
         async def _check(source: Source) -> SourceCheckResult:
             async with semaphore:
-                return await check_source(source, client, timeout, verbose)
+                return await check_source(
+                    source,
+                    client,
+                    timeout,
+                    verbose,
+                    rate_limiter=rate_limiter,
+                    robots_policy=robots_policy,
+                )
 
         tasks = [_check(s) for s in sources]
         results = await asyncio.gather(*tasks)
@@ -182,9 +274,9 @@ STATUS_SYMBOLS = {
 
 def summarize_results(results: list[SourceCheckResult]) -> ValidationCounts:
     return ValidationCounts(
-        ok=sum(1 for r in results if r.reachable and not r.warnings),
-        warnings=sum(1 for r in results if r.reachable and r.warnings),
-        failed=sum(1 for r in results if not r.reachable),
+        ok=sum(1 for r in results if _classify_result(r) == "ok"),
+        warnings=sum(1 for r in results if _classify_result(r) == "warn"),
+        failed=sum(1 for r in results if _classify_result(r) == "fail"),
     )
 
 
@@ -205,12 +297,7 @@ def print_report(results: list[SourceCheckResult], verbose: bool) -> None:
         print(f"\n--- {category.upper()} ---")
 
         for r in cat_results:
-            if not r.reachable:
-                status = STATUS_SYMBOLS["fail"]
-            elif r.warnings:
-                status = STATUS_SYMBOLS["warn"]
-            else:
-                status = STATUS_SYMBOLS["ok"]
+            status = STATUS_SYMBOLS[_classify_result(r)]
 
             tier_label = f"T{r.source.tier}"
             method_label = r.source.method.upper()
@@ -220,11 +307,19 @@ def print_report(results: list[SourceCheckResult], verbose: bool) -> None:
                 print(f"       Error: {r.error}")
             if r.redirect_url:
                 print(f"       Redirected to: {r.redirect_url}")
+            if r.source.method == "rss" and r.reachable:
+                feed_label = r.feed_format or "unknown"
+                print(
+                    f"       Feed: {feed_label}  "
+                    f"Entries: {r.rss_entries_found}  "
+                    f"Articles: {r.articles_found}"
+                )
             if r.source.method == "scrape" and r.reachable:
                 print(
                     f"       Containers: {r.containers_found}  "
                     f"Titles: {r.titles_found}  "
-                    f"Links: {r.links_found}"
+                    f"Links: {r.links_found}  "
+                    f"Articles: {r.articles_found}"
                 )
             for w in r.warnings:
                 print(f"       ⚠ {w}")
@@ -243,11 +338,19 @@ def print_report(results: list[SourceCheckResult], verbose: bool) -> None:
     if counts.failed or counts.warnings:
         print("\nSources needing attention:")
         for r in results:
-            if not r.reachable:
+            if _classify_result(r) == "fail":
                 print(f"  {STATUS_SYMBOLS['fail']} {r.source.name}: {r.error}")
-            elif r.warnings:
+            elif _classify_result(r) == "warn":
                 for w in r.warnings:
                     print(f"  {STATUS_SYMBOLS['warn']} {r.source.name}: {w}")
+
+
+def _classify_result(result: SourceCheckResult) -> str:
+    if result.error is not None or not result.reachable:
+        return "fail"
+    if result.warnings:
+        return "warn"
+    return "ok"
 
 
 # ---------------------------------------------------------------------------

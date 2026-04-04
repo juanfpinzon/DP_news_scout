@@ -4,6 +4,7 @@ import asyncio
 from types import SimpleNamespace
 
 import httpx
+from openai import APIConnectionError, APITimeoutError
 import pytest
 
 from src.analyzer import LLMClient
@@ -87,6 +88,16 @@ class FakeMetadataClient:
         return response
 
     async def aclose(self) -> None:
+        return None
+
+
+class CapturingOpenAIClient:
+    init_kwargs: dict[str, object] | None = None
+
+    def __init__(self, **kwargs) -> None:
+        CapturingOpenAIClient.init_kwargs = kwargs
+
+    async def close(self) -> None:
         return None
 
 
@@ -196,6 +207,26 @@ def test_llm_client_logs_token_usage_and_generation_cost() -> None:
     assert success_log["fallback_used"] is False
 
 
+def test_llm_client_configures_sdk_timeout_and_disables_internal_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("src.analyzer.llm_client.AsyncOpenAI", CapturingOpenAIClient)
+    CapturingOpenAIClient.init_kwargs = None
+
+    client = LLMClient(
+        settings=build_settings(),
+        api_key="test-key",
+        metadata_client=FakeMetadataClient(),
+        logger=DummyLogger(),
+    )
+
+    assert CapturingOpenAIClient.init_kwargs is not None
+    assert CapturingOpenAIClient.init_kwargs["timeout"] == 15.0
+    assert CapturingOpenAIClient.init_kwargs["max_retries"] == 0
+
+    asyncio.run(client.aclose())
+
+
 def test_llm_client_falls_back_after_primary_rate_limit() -> None:
     async def run() -> tuple[str, DummyLogger, FakeOpenAIClient, list[float]]:
         logger = DummyLogger()
@@ -294,6 +325,67 @@ def test_llm_client_retries_same_model_on_timeout_and_uses_usage_cost() -> None:
     success_log = logger.find("info", "llm_completion_succeeded")
     assert success_log["estimated_cost"] == pytest.approx(0.0024)
     assert success_log["cost_source"] == "response_usage"
+
+
+@pytest.mark.parametrize(
+    ("exception_factory", "message"),
+    [
+        (
+            lambda request: APITimeoutError(request=request),
+            "Request timed out.",
+        ),
+        (
+            lambda request: APIConnectionError(message="connection dropped", request=request),
+            "connection dropped",
+        ),
+    ],
+)
+def test_llm_client_retries_openai_transport_errors(
+    exception_factory,
+    message: str,
+) -> None:
+    async def run() -> tuple[str, DummyLogger, FakeOpenAIClient, list[float]]:
+        logger = DummyLogger()
+        sleep_calls: list[float] = []
+
+        async def fake_sleep(seconds: float) -> None:
+            sleep_calls.append(seconds)
+
+        request = httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions")
+        openai_client = FakeOpenAIClient(
+            [
+                exception_factory(request),
+                build_chat_response(content="Retried transport response"),
+            ]
+        )
+        client = LLMClient(
+            settings=build_settings(),
+            api_key="test-key",
+            client=openai_client,
+            metadata_client=FakeMetadataClient(),
+            logger=logger,
+            backoff_base_seconds=0.25,
+            sleep=fake_sleep,
+        )
+        result = await client.complete(
+            system_prompt="System prompt",
+            user_prompt="User prompt",
+            max_tokens=150,
+        )
+        return result, logger, openai_client, sleep_calls
+
+    result, logger, openai_client, sleep_calls = asyncio.run(run())
+
+    assert result == "Retried transport response"
+    assert [call["model"] for call in openai_client.calls] == [
+        "anthropic/claude-sonnet-4-6",
+        "anthropic/claude-sonnet-4-6",
+    ]
+    assert sleep_calls == [0.25]
+
+    retry_log = logger.find("warning", "llm_completion_retrying")
+    assert retry_log["status_code"] is None
+    assert retry_log["error"] == message
 
 
 def test_llm_client_raises_non_retryable_errors_without_retrying() -> None:

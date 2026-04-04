@@ -80,12 +80,23 @@ async def compose_digest(
     )
 
     try:
-        response_text = await active_client.complete(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            max_tokens=max_tokens,
-        )
-        digest = _parse_digest_payload(response_text, selected_articles)
+        try:
+            response_text = await active_client.complete(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                max_tokens=max_tokens,
+            )
+            digest = _parse_digest_payload(response_text, selected_articles)
+        except Exception as exc:
+            logger.error(
+                "digest_composition_failed",
+                input_articles=len(articles),
+                selected_articles=len(selected_articles),
+                article_urls=[article.url for article in selected_articles],
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
+            raise
         logger.info(
             "digest_composition_complete",
             input_articles=len(articles),

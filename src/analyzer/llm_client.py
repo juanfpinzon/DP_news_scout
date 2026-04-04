@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 import httpx
-from openai import AsyncOpenAI
+from openai import APIConnectionError, AsyncOpenAI
 
 from src.utils.config import AppConfig, Settings, load_config
 from src.utils.logging import get_logger
@@ -78,6 +78,8 @@ class LLMClient:
         self.client = client or AsyncOpenAI(
             api_key=api_key,
             base_url=OPENROUTER_BASE_URL,
+            timeout=settings.request_timeout_seconds,
+            max_retries=0,
         )
 
         self._owns_metadata_client = metadata_client is None
@@ -177,6 +179,7 @@ class LLMClient:
                         fallback_used=fallback_used or should_fallback,
                         status_code=status_code,
                         error=str(exc),
+                        error_type=type(exc).__name__,
                     )
                     raise
 
@@ -191,6 +194,7 @@ class LLMClient:
                     status_code=status_code,
                     retry_delay_seconds=delay_seconds,
                     error=str(exc),
+                    error_type=type(exc).__name__,
                 )
 
                 active_model = next_model
@@ -228,6 +232,7 @@ class LLMClient:
                 "llm_generation_metadata_unavailable",
                 generation_id=generation_id,
                 error=str(exc),
+                error_type=type(exc).__name__,
             )
             return None
 
@@ -352,7 +357,7 @@ def _extract_status_code(exc: Exception) -> int | None:
 
 
 def _is_retryable(exc: Exception) -> bool:
-    if isinstance(exc, (httpx.HTTPError, TimeoutError)):
+    if isinstance(exc, (APIConnectionError, httpx.HTTPError, TimeoutError)):
         return True
 
     status_code = _extract_status_code(exc)

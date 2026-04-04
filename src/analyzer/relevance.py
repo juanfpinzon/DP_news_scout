@@ -81,12 +81,24 @@ async def score_articles(
 
         for batch_index, batch in enumerate(_chunked(articles, batch_size), start=1):
             user_prompt = _build_user_prompt(batch)
-            response_text = await active_client.complete(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                max_tokens=max_tokens,
-            )
-            score_map = _parse_scores_payload(response_text, batch)
+            try:
+                response_text = await active_client.complete(
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    max_tokens=max_tokens,
+                )
+                score_map = _parse_scores_payload(response_text, batch)
+            except Exception as exc:
+                logger.error(
+                    "relevance_batch_failed",
+                    batch_index=batch_index,
+                    total_batches=total_batches,
+                    batch_articles=len(batch),
+                    article_urls=[article.url for article in batch],
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                )
+                raise
             retained_in_batch = 0
 
             for article in batch:

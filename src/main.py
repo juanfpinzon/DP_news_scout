@@ -43,7 +43,8 @@ def run_pipeline(
     initialize_database(config.settings.database_path)
     logger = get_logger(__name__, pipeline_stage="pipeline")
     started_at = utc_now_iso()
-    sources = load_source_registry()
+    date_label = _format_display_date(now)
+    default_subject = _build_digest_subject(issue_number=1, date_label=date_label)
 
     run_id = log_run(
         config.settings.database_path,
@@ -54,6 +55,36 @@ def run_pipeline(
         ),
     )
     issue_number = run_id
+    default_subject = _build_digest_subject(issue_number=issue_number, date_label=date_label)
+
+    try:
+        sources = load_source_registry()
+    except Exception as exc:
+        error = f"source registry stage failed: {exc}"
+        _log_pipeline_stage_failure(
+            logger=logger,
+            run_id=run_id,
+            issue_number=issue_number,
+            stage="source_registry",
+            error=error,
+            exc=exc,
+        )
+        return _finalize_pipeline_run(
+            config=config,
+            run_id=run_id,
+            issue_number=issue_number,
+            started_at=started_at,
+            subject=default_subject,
+            sources_fetched=0,
+            articles_found=0,
+            relevant_articles=0,
+            articles_included=0,
+            email_sent=False,
+            dry_run=config.settings.dry_run,
+            status="failed",
+            error=error,
+            logger=logger,
+        )
 
     logger.info(
         "pipeline_started",
@@ -85,38 +116,55 @@ def run_pipeline(
         error = (
             f"Pipeline timed out after {config.settings.pipeline_timeout} seconds"
         )
-        completed_at = utc_now_iso()
-        log_run(
-            config.settings.database_path,
-            PipelineRunRecord(
-                started_at=started_at,
-                completed_at=completed_at,
-                status="failed",
-                sources_fetched=0,
-                error_log=error,
-            ),
-            run_id=run_id,
-        )
-        logger.error(
-            "pipeline_timed_out",
+        _log_pipeline_stage_failure(
+            logger=logger,
             run_id=run_id,
             issue_number=issue_number,
+            stage="pipeline",
+            error=error,
             timeout_seconds=config.settings.pipeline_timeout,
         )
-        return PipelineResult(
+        return _finalize_pipeline_run(
+            config=config,
             run_id=run_id,
             issue_number=issue_number,
             status="failed",
             started_at=started_at,
-            completed_at=completed_at,
             sources_fetched=0,
             articles_found=0,
             relevant_articles=0,
             articles_included=0,
             email_sent=False,
-            subject=_build_digest_subject(issue_number=issue_number, date_label=_format_display_date(now)),
+            subject=default_subject,
             dry_run=config.settings.dry_run,
             error=error,
+            logger=logger,
+        )
+    except Exception as exc:
+        error = f"pipeline orchestration failed: {exc}"
+        _log_pipeline_stage_failure(
+            logger=logger,
+            run_id=run_id,
+            issue_number=issue_number,
+            stage="pipeline",
+            error=error,
+            exc=exc,
+        )
+        return _finalize_pipeline_run(
+            config=config,
+            run_id=run_id,
+            issue_number=issue_number,
+            started_at=started_at,
+            subject=default_subject,
+            sources_fetched=0,
+            articles_found=0,
+            relevant_articles=0,
+            articles_included=0,
+            email_sent=False,
+            dry_run=config.settings.dry_run,
+            status="failed",
+            error=error,
+            logger=logger,
         )
 
     return result
@@ -164,12 +212,13 @@ async def _run_pipeline_async(
     except Exception as exc:
         status = "failed"
         error = f"fetcher stage failed: {exc}"
-        logger.error(
-            "pipeline_stage_failed",
+        _log_pipeline_stage_failure(
+            logger=logger,
             run_id=run_id,
             issue_number=issue_number,
             stage="fetcher",
-            error=str(exc),
+            error=error,
+            exc=exc,
         )
         return _finalize_pipeline_run(
             config=config,
@@ -191,8 +240,8 @@ async def _run_pipeline_async(
     if fetch_summary.total_fetch_outage:
         status = "failed"
         error = "fetcher stage failed: all configured sources failed to fetch"
-        logger.error(
-            "pipeline_stage_failed",
+        _log_pipeline_stage_failure(
+            logger=logger,
             run_id=run_id,
             issue_number=issue_number,
             stage="fetcher",
@@ -227,12 +276,13 @@ async def _run_pipeline_async(
         except Exception as exc:
             status = "failed"
             error = f"analyzer relevance stage failed: {exc}"
-            logger.error(
-                "pipeline_stage_failed",
+            _log_pipeline_stage_failure(
+                logger=logger,
                 run_id=run_id,
                 issue_number=issue_number,
                 stage="analyzer_relevance",
-                error=str(exc),
+                error=error,
+                exc=exc,
             )
             return _finalize_pipeline_run(
                 config=config,
@@ -261,12 +311,13 @@ async def _run_pipeline_async(
         except Exception as exc:
             status = "failed"
             error = f"digest composition stage failed: {exc}"
-            logger.error(
-                "pipeline_stage_failed",
+            _log_pipeline_stage_failure(
+                logger=logger,
                 run_id=run_id,
                 issue_number=issue_number,
                 stage="digest_composition",
-                error=str(exc),
+                error=error,
+                exc=exc,
             )
             return _finalize_pipeline_run(
                 config=config,
@@ -291,12 +342,13 @@ async def _run_pipeline_async(
         except Exception as exc:
             status = "failed"
             error = f"renderer stage failed: {exc}"
-            logger.error(
-                "pipeline_stage_failed",
+            _log_pipeline_stage_failure(
+                logger=logger,
                 run_id=run_id,
                 issue_number=issue_number,
                 stage="renderer",
-                error=str(exc),
+                error=error,
+                exc=exc,
             )
             return _finalize_pipeline_run(
                 config=config,
@@ -340,17 +392,25 @@ async def _run_pipeline_async(
         except Exception as exc:
             status = "failed"
             error = f"sender stage failed: {exc}"
-            logger.error(
-                "pipeline_stage_failed",
+            _log_pipeline_stage_failure(
+                logger=logger,
                 run_id=run_id,
                 issue_number=issue_number,
                 stage="sender",
-                error=str(exc),
+                error=error,
+                exc=exc,
             )
         else:
             if not email_sent:
                 status = "failed"
                 error = "sender stage returned unsuccessful delivery status"
+                _log_pipeline_stage_failure(
+                    logger=logger,
+                    run_id=run_id,
+                    issue_number=issue_number,
+                    stage="sender",
+                    error=error,
+                )
 
     if status == "success" and email_sent:
         try:
@@ -452,6 +512,28 @@ def _finalize_pipeline_run(
         dry_run=dry_run,
         error=error,
     )
+
+
+def _log_pipeline_stage_failure(
+    *,
+    logger: Any,
+    run_id: int,
+    issue_number: int,
+    stage: str,
+    error: str,
+    exc: Exception | None = None,
+    **context: Any,
+) -> None:
+    payload: dict[str, Any] = {
+        "run_id": run_id,
+        "issue_number": issue_number,
+        "stage": stage,
+        "error": error,
+        **context,
+    }
+    if exc is not None:
+        payload["error_type"] = type(exc).__name__
+    logger.error("pipeline_stage_failed", **payload)
 
 
 def _count_digest_articles(digest: Digest) -> int:
