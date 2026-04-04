@@ -499,7 +499,7 @@ Build tests/test_pipeline.py:
 
 ### Epic 6.2 — Hardening
 
-**Task 6.2.1: Error handling audit**
+**Task 6.2.1: Error handling audit** ✅
 ```
 Review all modules for:
   - Unhandled exceptions
@@ -509,7 +509,7 @@ Review all modules for:
   - Add structured error context to all log messages
 ```
 
-**Task 6.2.2: Source URL validation**
+**Task 6.2.2: Source URL validation** ✅
 ```
 Build scripts/seed_sources.py:
   - Hit every source URL in sources.yaml

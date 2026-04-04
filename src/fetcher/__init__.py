@@ -164,6 +164,7 @@ async def _fetch_single_source(
                 source_method=source.method,
                 source_url=source.url,
                 error=str(exc),
+                error_type=type(exc).__name__,
             )
             return False, []
 
@@ -171,6 +172,7 @@ async def _fetch_single_source(
             "source_fetch_complete",
             source=source.name,
             source_method=source.method,
+            source_url=source.url,
             article_count=len(articles),
         )
         return True, articles

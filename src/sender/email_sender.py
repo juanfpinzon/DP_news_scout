@@ -43,6 +43,7 @@ def send_digest(
             "email_delivery_skipped",
             recipient_group=active_group,
             recipient_count=0,
+            subject=subject,
             reason=message,
         )
         _record_delivery(config=config, run_id=run_id, recipient_count=0, status="skipped", error=message)
@@ -63,6 +64,7 @@ def send_digest(
     }
 
     last_error: str | None = None
+    last_error_type: str | None = None
     for attempt in range(1, MAX_SEND_ATTEMPTS + 1):
         try:
             response = client.inboxes.messages.send(
@@ -87,13 +89,16 @@ def send_digest(
             return True
         except Exception as exc:  # pragma: no cover - SDK exception types vary
             last_error = str(exc)
+            last_error_type = type(exc).__name__
             logger.warning(
                 "email_delivery_attempt_failed",
                 recipient_group=active_group,
                 recipient_count=recipient_count,
                 attempt=attempt,
                 max_attempts=MAX_SEND_ATTEMPTS,
+                subject=subject,
                 error=last_error,
+                error_type=last_error_type,
             )
             if attempt < MAX_SEND_ATTEMPTS:
                 sleep_fn(BASE_BACKOFF_SECONDS * (2 ** (attempt - 1)))
@@ -104,6 +109,7 @@ def send_digest(
         recipient_count=recipient_count,
         subject=subject,
         error=last_error,
+        error_type=last_error_type,
     )
     _record_delivery(
         config=config,

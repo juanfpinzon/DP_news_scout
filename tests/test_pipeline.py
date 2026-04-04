@@ -226,6 +226,38 @@ def test_run_pipeline_marks_failed_when_fetch_stage_raises(tmp_path, monkeypatch
     assert get_recent_urls(config.settings.database_path, days=7) == set()
 
 
+def test_run_pipeline_marks_failed_when_source_registry_load_fails(tmp_path, monkeypatch) -> None:
+    config = _build_config(tmp_path=tmp_path, dry_run=False)
+
+    monkeypatch.setattr(
+        "src.main.load_source_registry",
+        lambda: (_ for _ in ()).throw(ValueError("invalid sources config")),
+    )
+
+    result = run_pipeline(
+        config=config,
+        now=datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
+    )
+
+    assert result.status == "failed"
+    assert result.error == "source registry stage failed: invalid sources config"
+    assert result.email_sent is False
+
+    with sqlite3.connect(config.settings.database_path) as connection:
+        row = connection.execute(
+            "SELECT status, sources_fetched, articles_found, articles_included, error_log "
+            "FROM pipeline_runs WHERE id = 1"
+        ).fetchone()
+
+    assert row == (
+        "failed",
+        0,
+        0,
+        0,
+        "source registry stage failed: invalid sources config",
+    )
+
+
 def test_run_pipeline_marks_failed_when_all_sources_fail(tmp_path, monkeypatch) -> None:
     config = _build_config(tmp_path=tmp_path, dry_run=False)
 
@@ -255,6 +287,58 @@ def test_run_pipeline_marks_failed_when_all_sources_fail(tmp_path, monkeypatch) 
     assert result.error == "fetcher stage failed: all configured sources failed to fetch"
     assert result.email_sent is False
     assert get_recent_urls(config.settings.database_path, days=7) == set()
+
+
+def test_run_pipeline_succeeds_when_some_sources_fail(tmp_path, monkeypatch) -> None:
+    config = _build_config(tmp_path=tmp_path, dry_run=False)
+
+    monkeypatch.setattr("src.main.load_source_registry", lambda: [_make_source("Source A"), _make_source("Source B")])
+
+    async def fake_fetch_all_sources_report(**_kwargs):
+        return _make_fetch_summary(
+            articles=[_make_raw_article(1, source="Source A")],
+            sources_attempted=2,
+            sources_succeeded=1,
+            sources_failed=1,
+            articles_found=1,
+        )
+
+    async def fake_score_articles(*_args, **_kwargs):
+        return [_make_scored_article(1, source="Source A")]
+
+    async def fake_compose_digest(*_args, **_kwargs):
+        return Digest(
+            top_story=DigestItem(
+                url="https://example.com/article-1",
+                headline="Top story",
+                summary="Top summary",
+                why_it_matters="Top importance",
+                source="Source A",
+                date="Apr 4, 2026",
+            ),
+            key_developments=[],
+            on_our_radar=[],
+            quick_hits=[],
+        )
+
+    monkeypatch.setattr("src.main.fetch_all_sources_report", fake_fetch_all_sources_report)
+    monkeypatch.setattr("src.main.score_articles", fake_score_articles)
+    monkeypatch.setattr("src.main.compose_digest", fake_compose_digest)
+    monkeypatch.setattr("src.main.render_digest", lambda *_args, **_kwargs: "<html>digest</html>")
+    monkeypatch.setattr("src.main.render_plaintext", lambda *_args, **_kwargs: "digest")
+    monkeypatch.setattr("src.main.send_digest", lambda *_args, **_kwargs: True)
+
+    result = run_pipeline(
+        config=config,
+        now=datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
+    )
+
+    assert result.status == "success"
+    assert result.sources_fetched == 1
+    assert result.articles_found == 1
+    assert result.relevant_articles == 1
+    assert result.articles_included == 1
+    assert result.email_sent is True
 
 
 def test_run_pipeline_real_rss_and_llm_dry_run(tmp_path, monkeypatch) -> None:
