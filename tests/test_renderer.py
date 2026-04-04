@@ -165,6 +165,16 @@ class TestRenderDigest:
         assert ".mobile-body" in html
         assert "font-size: 16px;" in html
 
+    def test_desktop_container_width_is_configurable(self) -> None:
+        html = render_digest(
+            _make_full_digest(),
+            issue_number=1,
+            date="April 4, 2026",
+            max_width_px=880,
+        )
+        assert 'width="880"' in html
+        assert "max-width:880px" in html
+
     def test_footer_renders_feedback_link(self, monkeypatch) -> None:
         monkeypatch.delenv("FEEDBACK_URL", raising=False)
         monkeypatch.setenv("FEEDBACK_EMAIL", "feedback@example.com")

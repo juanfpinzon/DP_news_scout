@@ -15,7 +15,7 @@ from src.analyzer.digest import compose_digest
 from src.analyzer.llm_client import LLMClient
 from src.analyzer.relevance import score_articles
 from src.fetcher import fetch_all_sources_report, load_source_registry
-from src.main import DEFAULT_SUBJECT_PREFIX, PipelineResult, run_pipeline
+from src.main import DEFAULT_SUBJECT_PREFIX, PipelineResult, resolve_issue_number, run_pipeline
 from src.renderer import render_digest, render_plaintext
 from src.sender import send_digest
 from src.storage.db import initialize_database
@@ -214,7 +214,10 @@ async def _render_live_digest(
 ) -> RenderedDigestResult:
     initialize_database(config.settings.database_path)
     date_label = _format_display_date(now)
-    issue_number = _next_issue_number(config.settings.database_path)
+    issue_number = resolve_issue_number(
+        config.settings,
+        fallback=_next_issue_number(config.settings.database_path),
+    )
     sources = load_source_registry()
 
     fetch_summary = await fetch_all_sources_report(
@@ -273,7 +276,12 @@ async def _render_live_digest(
             logger=get_logger(__name__, pipeline_stage="analyzer"),
         )
 
-    html = render_digest(digest, issue_number=issue_number, date=date_label)
+    html = render_digest(
+        digest,
+        issue_number=issue_number,
+        date=date_label,
+        max_width_px=config.settings.email_max_width_px,
+    )
     plaintext = render_plaintext(digest, issue_number=issue_number, date=date_label)
     return RenderedDigestResult(
         issue_number=issue_number,

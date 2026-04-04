@@ -1,5 +1,6 @@
 max_articles_per_source: 10
 max_digest_items: 15
+max_digest_items_per_source: 3
 relevance_threshold: 6
 digest_send_time: "09:00"
 timezone: "Central European Time"
@@ -15,3 +16,5 @@ rss_lookback_hours: 48
 dedup_window_days: 7
 request_timeout_seconds: 15
 rate_limit_seconds: 1.0
+email_max_width_px: 880
+issue_number_override: 0

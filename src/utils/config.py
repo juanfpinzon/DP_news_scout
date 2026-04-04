@@ -39,6 +39,9 @@ class Settings:
     dedup_window_days: int
     request_timeout_seconds: float
     rate_limit_seconds: float
+    max_digest_items_per_source: int = 3
+    email_max_width_px: int = 880
+    issue_number_override: int | None = None
 
 
 @dataclass(slots=True)
@@ -79,7 +82,12 @@ class AppConfig:
 def load_config(env_file: Path | None = None) -> AppConfig:
     load_dotenv(env_file or DEFAULT_ENV_FILE, override=env_file is not None)
 
-    settings_data = _read_yaml(CONFIG_DIR / "settings.yaml")
+    settings_data = {
+        "max_digest_items_per_source": 3,
+        "email_max_width_px": 880,
+        "issue_number_override": None,
+        **_read_yaml(CONFIG_DIR / "settings.yaml"),
+    }
     sources_data = _read_yaml(CONFIG_DIR / "sources.yaml")
     recipients_data = _read_yaml(CONFIG_DIR / "recipients.yaml")
 
@@ -132,6 +140,21 @@ def load_config(env_file: Path | None = None) -> AppConfig:
             "RATE_LIMIT_SECONDS",
             settings_data,
             "rate_limit_seconds",
+        ),
+        max_digest_items_per_source=_get_int(
+            "MAX_DIGEST_ITEMS_PER_SOURCE",
+            settings_data,
+            "max_digest_items_per_source",
+        ),
+        email_max_width_px=_get_int(
+            "EMAIL_MAX_WIDTH_PX",
+            settings_data,
+            "email_max_width_px",
+        ),
+        issue_number_override=_get_optional_int(
+            "ISSUE_NUMBER_OVERRIDE",
+            settings_data,
+            "issue_number_override",
         ),
     )
     _validate_settings(settings)
@@ -201,6 +224,24 @@ def _get_bool(env_key: str, config: dict[str, Any], config_key: str) -> bool:
     raise ConfigError(f"Invalid boolean for '{config_key}': {value!r}")
 
 
+def _get_optional_int(env_key: str, config: dict[str, Any], config_key: str) -> int | None:
+    value = os.getenv(env_key)
+    if value is None:
+        value = config.get(config_key)
+
+    if value is None:
+        return None
+
+    normalized = str(value).strip()
+    if normalized == "" or normalized.lower() in {"none", "null"}:
+        return None
+
+    try:
+        return int(normalized)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"Invalid integer for '{config_key}': {value!r}") from exc
+
+
 def _get_float(env_key: str, config: dict[str, Any], config_key: str) -> float:
     value = os.getenv(env_key, config.get(config_key))
     try:
@@ -239,6 +280,12 @@ def _validate_settings(settings: Settings) -> None:
         raise ConfigError("request_timeout_seconds must be greater than 0")
     if settings.rate_limit_seconds < 0:
         raise ConfigError("rate_limit_seconds must be 0 or greater")
+    if settings.max_digest_items_per_source <= 0:
+        raise ConfigError("max_digest_items_per_source must be greater than 0")
+    if settings.email_max_width_px <= 0:
+        raise ConfigError("email_max_width_px must be greater than 0")
+    if settings.issue_number_override is not None and settings.issue_number_override < 0:
+        raise ConfigError("issue_number_override must be 0 or greater")
 
 
 def _build_sources(config: dict[str, Any]) -> list[SourceConfig]:

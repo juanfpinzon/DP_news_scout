@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from src.analyzer.digest import Digest, DigestCompositionError, compose_digest
+from src.analyzer.digest import Digest, DigestCompositionError, _select_articles, compose_digest
 from src.analyzer.relevance import ScoredArticle
 from src.utils.config import Settings
 
@@ -364,3 +364,53 @@ def test_compose_digest_retries_after_invalid_json_response() -> None:
     assert len(llm_client.calls) == 2
     assert "Previous invalid response" in str(llm_client.calls[1]["user_prompt"])
     assert any(event == "digest_composition_retrying_invalid_json" for event, _payload in logger.records)
+
+
+def test_select_articles_balances_sources_before_filling_limit() -> None:
+    articles = [
+        build_article(1, 10),
+        build_article(2, 9),
+        build_article(3, 8),
+        build_article(4, 7),
+        build_article(5, 8),
+        build_article(6, 7),
+        build_article(7, 6),
+    ]
+    articles[0].source = articles[1].source = articles[2].source = articles[3].source = "Source A"
+    articles[4].source = articles[5].source = "Source B"
+    articles[6].source = "Source C"
+
+    selected = _select_articles(articles, limit=5, max_per_source=2)
+
+    counts: dict[str, int] = {}
+    for article in selected:
+        counts[article.source] = counts.get(article.source, 0) + 1
+
+    assert [article.url for article in selected[:3]] == [
+        "https://example.com/article-1",
+        "https://example.com/article-5",
+        "https://example.com/article-7",
+    ]
+    assert counts == {"Source A": 2, "Source B": 2, "Source C": 1}
+
+
+def test_select_articles_can_fill_past_source_cap_when_needed() -> None:
+    articles = [
+        build_article(1, 10),
+        build_article(2, 9),
+        build_article(3, 8),
+        build_article(4, 7),
+        build_article(5, 6),
+    ]
+    for article in articles[:4]:
+        article.source = "Source A"
+    articles[4].source = "Source B"
+
+    selected = _select_articles(articles, limit=4, max_per_source=1)
+
+    counts: dict[str, int] = {}
+    for article in selected:
+        counts[article.source] = counts.get(article.source, 0) + 1
+
+    assert len(selected) == 4
+    assert counts == {"Source A": 3, "Source B": 1}

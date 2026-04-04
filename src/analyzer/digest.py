@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -71,7 +72,11 @@ async def compose_digest(
 
     logger = logger or get_logger(__name__, pipeline_stage="analyzer")
     system_prompt = _build_system_prompt()
-    selected_articles = _select_articles(articles, selected_limit)
+    selected_articles = _select_articles(
+        articles,
+        limit=selected_limit,
+        max_per_source=settings.max_digest_items_per_source,
+    )
     user_prompt = _build_user_prompt(selected_articles)
 
     owns_client = llm_client is None
@@ -131,12 +136,90 @@ async def compose_digest(
             await active_client.aclose()
 
 
-def _select_articles(articles: list[ScoredArticle], limit: int) -> list[ScoredArticle]:
-    return sorted(
-        articles,
-        key=lambda article: article.relevance_score,
+def _select_articles(
+    articles: list[ScoredArticle],
+    *,
+    limit: int,
+    max_per_source: int,
+) -> list[ScoredArticle]:
+    if limit <= 0:
+        return []
+    if max_per_source <= 0:
+        raise ValueError("max_per_source must be greater than 0")
+
+    grouped_articles: dict[str, list[ScoredArticle]] = defaultdict(list)
+    canonical_source_names: dict[str, str] = {}
+
+    for article in articles:
+        source_name = article.source.strip()
+        source_key = source_name.casefold() or article.url
+        grouped_articles[source_key].append(article)
+        canonical_source_names.setdefault(source_key, source_name)
+
+    for source_articles in grouped_articles.values():
+        source_articles.sort(
+            key=lambda article: (
+                article.relevance_score,
+                article.published_at or "",
+                article.url,
+            ),
+            reverse=True,
+        )
+
+    source_order = sorted(
+        grouped_articles,
+        key=lambda source_key: (
+            grouped_articles[source_key][0].relevance_score,
+            canonical_source_names[source_key],
+        ),
         reverse=True,
-    )[:limit]
+    )
+
+    selected: list[ScoredArticle] = []
+    selected_urls: set[str] = set()
+    selected_counts: dict[str, int] = defaultdict(int)
+    round_index = 0
+
+    while len(selected) < limit:
+        progress = False
+        for source_key in source_order:
+            source_articles = grouped_articles[source_key]
+            if round_index >= len(source_articles):
+                continue
+            if selected_counts[source_key] >= max_per_source:
+                continue
+
+            article = source_articles[round_index]
+            if article.url in selected_urls:
+                continue
+
+            selected.append(article)
+            selected_urls.add(article.url)
+            selected_counts[source_key] += 1
+            progress = True
+
+            if len(selected) >= limit:
+                return selected
+
+        if not progress:
+            break
+        round_index += 1
+
+    leftovers = sorted(
+        (article for article in articles if article.url not in selected_urls),
+        key=lambda article: (
+            article.relevance_score,
+            article.published_at or "",
+            article.url,
+        ),
+        reverse=True,
+    )
+    for article in leftovers:
+        selected.append(article)
+        if len(selected) >= limit:
+            break
+
+    return selected
 
 
 def _build_system_prompt() -> str:
@@ -166,6 +249,7 @@ def _build_user_prompt(articles: list[ScoredArticle]) -> str:
         "Compose the morning digest using only the articles below.\n"
         "Do not invent articles, URLs, sources, or dates.\n"
         "Each article URL may appear at most once across all sections.\n"
+        "Preserve source diversity in the final digest when the article set allows it.\n"
         "Return strict JSON only.\n\n"
         f"{json.dumps(payload, ensure_ascii=True, indent=2)}"
     )

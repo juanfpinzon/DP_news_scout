@@ -17,15 +17,23 @@ TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
 TEMPLATE_NAME = "digest_email.html"
 DEFAULT_FEEDBACK_SUBJECT = "DPNS Feedback"
 DEFAULT_FEEDBACK_EMAIL = "news-scout@example.com"
+DEFAULT_EMAIL_MAX_WIDTH_PX = 880
 
 
-def render_digest(digest: Digest, issue_number: int, date: str) -> str:
+def render_digest(
+    digest: Digest,
+    issue_number: int,
+    date: str,
+    *,
+    max_width_px: int = DEFAULT_EMAIL_MAX_WIDTH_PX,
+) -> str:
     """Render a Digest into a fully inlined HTML email string.
 
     Args:
         digest: The composed digest dataclass.
         issue_number: Sequential issue number for the header.
         date: Human-readable date string (e.g. "April 4, 2026").
+        max_width_px: Desktop max width for the email container.
 
     Returns:
         Complete HTML string with all CSS inlined for email client compatibility.
@@ -43,6 +51,7 @@ def render_digest(digest: Digest, issue_number: int, date: str) -> str:
         count_unique_sources(digest)
     )
     context["feedback_href"] = _build_feedback_href()
+    context["max_width_px"] = max_width_px
 
     raw_html = template.render(context)
     return transform(raw_html, remove_classes=False, disable_validation=True)

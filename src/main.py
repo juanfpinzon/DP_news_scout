@@ -44,7 +44,10 @@ def run_pipeline(
     logger = get_logger(__name__, pipeline_stage="pipeline")
     started_at = utc_now_iso()
     date_label = _format_display_date(now)
-    default_subject = _build_digest_subject(issue_number=1, date_label=date_label)
+    default_subject = _build_digest_subject(
+        issue_number=resolve_issue_number(config.settings, fallback=1),
+        date_label=date_label,
+    )
 
     run_id = log_run(
         config.settings.database_path,
@@ -54,7 +57,7 @@ def run_pipeline(
             sources_fetched=0,
         ),
     )
-    issue_number = run_id
+    issue_number = resolve_issue_number(config.settings, fallback=run_id)
     default_subject = _build_digest_subject(issue_number=issue_number, date_label=date_label)
 
     try:
@@ -337,7 +340,12 @@ async def _run_pipeline_async(
             )
 
         try:
-            html = render_digest(digest, issue_number=issue_number, date=date_label)
+            html = render_digest(
+                digest,
+                issue_number=issue_number,
+                date=date_label,
+                max_width_px=config.settings.email_max_width_px,
+            )
             plaintext = render_plaintext(digest, issue_number=issue_number, date=date_label)
         except Exception as exc:
             status = "failed"
@@ -619,6 +627,13 @@ def _build_no_news_email(*, issue_number: int, date_label: str) -> tuple[str, st
 def _format_display_date(now: datetime | None = None) -> str:
     active_now = now or datetime.now(timezone.utc)
     return f"{active_now.strftime('%B')} {active_now.day}, {active_now.year}"
+
+
+def resolve_issue_number(settings: Any, *, fallback: int) -> int:
+    override = getattr(settings, "issue_number_override", None)
+    if override is not None:
+        return int(override)
+    return fallback
 
 
 def main() -> None:

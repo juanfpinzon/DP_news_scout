@@ -26,7 +26,7 @@
     a:hover { text-decoration: underline; }
 
     /* Mobile */
-    @media only screen and (max-width: 680px) {
+    @media only screen and (max-width: 920px) {
       .email-container { width: 100% !important; max-width: 100% !important; }
       .fluid { width: 100% !important; max-width: 100% !important; height: auto !important; }
       .stack-column { display: block !important; width: 100% !important; }
@@ -42,8 +42,8 @@
     <tr>
       <td align="center" style="padding:24px 0;">
 
-        <!-- Email container: 640px max -->
-        <table role="presentation" class="email-container" width="640" cellpadding="0" cellspacing="0" border="0" style="max-width:640px;background-color:#ffffff;">
+        <!-- Email container: configurable desktop max -->
+        <table role="presentation" class="email-container" width="{{ max_width_px }}" cellpadding="0" cellspacing="0" border="0" style="max-width:{{ max_width_px }}px;background-color:#ffffff;">
 
           <!-- ============ HEADER ============ -->
           <tr>

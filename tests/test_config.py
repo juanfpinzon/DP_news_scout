@@ -22,6 +22,9 @@ def test_load_config_reads_defaults() -> None:
     assert config.settings.fetch_concurrency == 5
     assert config.settings.rss_lookback_hours == 48
     assert config.settings.dedup_window_days == 7
+    assert config.settings.max_digest_items_per_source == 3
+    assert config.settings.email_max_width_px == 880
+    assert config.settings.issue_number_override == 0
     assert config.settings.timezone == "Central European Time"
     assert config.settings.llm_model == "anthropic/claude-sonnet-4-6"
     assert config.settings.llm_model_fallback == "anthropic/claude-4-5-haiku"

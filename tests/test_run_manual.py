@@ -251,7 +251,57 @@ def test_render_live_digest_uses_non_persisting_fetch_path_and_fails_on_total_ou
     assert captured["persist_to_db"] is False
 
 
-def _build_config(*, dry_run: bool) -> AppConfig:
+def test_render_live_digest_uses_issue_number_override(
+    monkeypatch: pytest.MonkeyPatch,
+    run_manual_module,
+) -> None:
+    config = _build_config(dry_run=False, issue_number_override=0)
+
+    monkeypatch.setattr(run_manual_module, "load_source_registry", lambda: [object()])
+    monkeypatch.setattr(run_manual_module, "_next_issue_number", lambda _db_path: 7)
+
+    async def fake_fetch_all_sources_report(**_kwargs):
+        return FetchSummary(
+            articles=[object()],
+            sources_attempted=1,
+            sources_succeeded=1,
+            sources_failed=0,
+            articles_found=1,
+            articles_deduplicated=1,
+            articles_saved=0,
+        )
+
+    async def fake_score_articles(*_args, **_kwargs):
+        return [object()]
+
+    async def fake_compose_digest(*_args, **_kwargs):
+        class _Digest:
+            top_story = object()
+            key_developments = []
+            on_our_radar = []
+            quick_hits = []
+
+        return _Digest()
+
+    monkeypatch.setattr(run_manual_module, "fetch_all_sources_report", fake_fetch_all_sources_report)
+    monkeypatch.setattr(run_manual_module, "score_articles", fake_score_articles)
+    monkeypatch.setattr(run_manual_module, "compose_digest", fake_compose_digest)
+    monkeypatch.setattr(run_manual_module, "render_digest", lambda *_args, **_kwargs: "<html>digest</html>")
+    monkeypatch.setattr(run_manual_module, "render_plaintext", lambda *_args, **_kwargs: "digest")
+    monkeypatch.setattr(run_manual_module, "_count_digest_articles", lambda _digest: 1)
+
+    rendered = run_manual_module.asyncio.run(
+        run_manual_module._render_live_digest(
+            config=config,
+            now=datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
+        )
+    )
+
+    assert rendered.issue_number == 0
+    assert rendered.subject == "Digital Procurement News Scout | April 4, 2026 | Issue #0"
+
+
+def _build_config(*, dry_run: bool, issue_number_override: int | None = None) -> AppConfig:
     settings = Settings(
         max_articles_per_source=10,
         max_digest_items=15,
@@ -270,6 +320,7 @@ def _build_config(*, dry_run: bool) -> AppConfig:
         dedup_window_days=7,
         request_timeout_seconds=15.0,
         rate_limit_seconds=1.0,
+        issue_number_override=issue_number_override,
     )
     recipients = [RecipientConfig(email="juancho704@gmail.com")]
     return AppConfig(
