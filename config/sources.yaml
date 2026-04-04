@@ -183,21 +183,103 @@ sources:
     category: "consulting"
     selectors: *generic_scrape
 
-  - name: Deloitte Digital Procurement
-    url: "https://www2.deloitte.com/us/en/pages/operations/solutions/digital-procurement-managed-services.html"
-    tier: 3
+  - name: Deloitte Procurement Insights
+    url: "https://www2.deloitte.com/us/en/pages/operations/articles/procurement-insights.html"
+    tier: 2
     method: "scrape"
     active: true
     category: "consulting"
     selectors: *generic_scrape
 
-  - name: Accenture Procurement
-    url: "https://www.accenture.com/us-en/services/supply-chain-management/sourcing-procurement"
-    tier: 3
+  - name: Accenture Procurement Insights
+    url: "https://www.accenture.com/us-en/insights/operations/procurement-index"
+    tier: 2
     method: "scrape"
     active: true
     category: "consulting"
     selectors: *generic_scrape
+
+  - name: Hackett Group Procurement
+    url: "https://www.thehackettgroup.com/insights/procurement/"
+    tier: 2
+    method: "scrape"
+    active: true
+    category: "consulting"
+    selectors: *resource_scrape
+
+  - name: PwC Procurement
+    url: "https://www.pwc.com/gx/en/issues/transformation/procurement.html"
+    tier: 2
+    method: "scrape"
+    active: true
+    category: "consulting"
+    selectors: *generic_scrape
+
+  - name: EY Procurement
+    url: "https://www.ey.com/en_gl/supply-chain/procurement"
+    tier: 2
+    method: "scrape"
+    active: true
+    category: "consulting"
+    selectors: *generic_scrape
+
+  - name: Kearney Procurement
+    url: "https://www.kearney.com/procurement/articles-insights"
+    tier: 2
+    method: "scrape"
+    active: true
+    category: "consulting"
+    selectors: *resource_scrape
+
+  - name: Digital Procurement World
+    url: "https://digitalprocurementworld.com/news/"
+    tier: 2
+    method: "scrape"
+    active: true
+    category: "community"
+    selectors: *newsroom_scrape
+
+  # --- Peer CPG companies (competitive intelligence) ---
+
+  - name: Unilever Newsroom
+    url: "https://www.unilever.com/news/"
+    tier: 2
+    method: "scrape"
+    active: true
+    category: "peer_cpg"
+    selectors: *newsroom_scrape
+
+  - name: Mars Newsroom
+    url: "https://www.mars.com/news-and-stories"
+    tier: 2
+    method: "scrape"
+    active: true
+    category: "peer_cpg"
+    selectors: *newsroom_scrape
+
+  - name: Mondelez Newsroom
+    url: "https://www.mondelezinternational.com/news/"
+    tier: 2
+    method: "scrape"
+    active: true
+    category: "peer_cpg"
+    selectors: *newsroom_scrape
+
+  - name: Procter & Gamble Newsroom
+    url: "https://news.pg.com/news-releases/"
+    tier: 2
+    method: "scrape"
+    active: true
+    category: "peer_cpg"
+    selectors: *newsroom_scrape
+
+  - name: Kraft Heinz Newsroom
+    url: "https://news.kraftheinzcompany.com/"
+    tier: 2
+    method: "scrape"
+    active: true
+    category: "peer_cpg"
+    selectors: *newsroom_scrape
 
 # Source discovery gaps from the PRD that should be revisited after the
 # initial fetcher hardening pass:

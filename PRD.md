@@ -78,6 +78,28 @@ Sources are grouped into tiers. The system should attempt all Tier 1 sources dai
 
 > ★ = platform currently in use by the Digital Procurement team; score any news about these vendors +2 bonus relevance points.
 
+#### Tier 2 (continued) — Consulting & Advisory
+| Source | Type | Focus |
+|--------|------|-------|
+| Deloitte (procurement insights) | Consulting | Industry reports, digital procurement |
+| Accenture (procurement insights) | Consulting | Technology trends, procurement transformation |
+| Hackett Group (procurement) | Consulting/Advisory | Benchmarking, best practices, procurement maturity |
+| PwC (procurement) | Consulting | Procurement strategy, digital transformation |
+| EY (procurement) | Consulting | Procurement advisory, supply chain |
+| Kearney (procurement) | Consulting | Procurement strategy, sourcing excellence |
+| Digital Procurement World | Community/Events | Industry news, digital procurement trends |
+
+#### Tier 2 (continued) — Peer / Competitor Intelligence
+| Source | Type | Focus |
+|--------|------|-------|
+| Unilever (newsroom) | Peer CPG | Procurement & supply chain announcements |
+| Mars (newsroom) | Peer CPG | Procurement & digital transformation news |
+| Mondelez (newsroom) | Peer CPG | Procurement & supply chain initiatives |
+| Procter & Gamble (newsroom) | Peer CPG | Procurement technology & strategy |
+| Kraft Heinz (newsroom) | Peer CPG | Procurement & operations news |
+
+> Peer CPG newsrooms are monitored for procurement-related content only. The LLM relevance filter ensures only articles about procurement, sourcing, supply chain digitization, or related topics are surfaced — general corporate news is excluded.
+
 #### Tier 3 — Fetch if relevant articles detected
 | Source | Type | Focus |
 |--------|------|-------|
@@ -85,8 +107,6 @@ Sources are grouped into tiers. The system should attempt all Tier 1 sources dai
 | HBR | Mainstream | Strategy, leadership |
 | CIO Magazine | Mainstream | IT/digital transformation |
 | BCG (operations) | Consulting | Digital strategy |
-| Deloitte (procurement) | Consulting | Industry reports |
-| Accenture (procurement) | Consulting | Technology trends |
 
 ### 3.2 Content Filtering Criteria
 
@@ -97,6 +117,7 @@ Articles must pass **at least one** relevance gate:
 4. **Market moves** — M&A in procuretech, funding rounds, vendor partnerships, analyst ratings
 5. **Leadership/strategy** — CPO agenda, procurement org design, talent, change management
 6. **Adjacent relevance** — Supply chain digitization, ESG compliance tech, risk management platforms
+7. **Competitive intelligence** — Peer CPG companies (Unilever, Mars, Mondelez, P&G, Kraft Heinz, and similar) publishing about their procurement digitization, sourcing strategies, supplier programs, or technology adoption
 
 Articles that are purely marketing fluff, product demos without substance, or unrelated to procurement should be filtered out.
 

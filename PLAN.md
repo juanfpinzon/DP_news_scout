@@ -136,7 +136,7 @@ Build src/storage/db.py:
 
 ### Epic 2.1 — Source Registry
 
-**Task 2.1.1: Build source registry** ✅
+**Task 2.1.1: Build source registry** ✅ ⚠️ NEEDS REVISION (LT feedback 2026-04-04)
 ```
 Create config/sources.yaml with ALL sources:
   For each source, define:
@@ -146,7 +146,7 @@ Create config/sources.yaml with ALL sources:
     - method: "rss" | "scrape"
     - selectors: (if scrape) { article: "css selector", title: "...", link: "...", date: "..." }
     - active: true
-    - category: "trade_media" | "analyst" | "consulting" | "vendor" | "mainstream" | "community"
+    - category: "trade_media" | "analyst" | "consulting" | "vendor" | "mainstream" | "community" | "peer_cpg"
 
 Build src/fetcher/registry.py:
   - Load sources.yaml
@@ -155,6 +155,13 @@ Build src/fetcher/registry.py:
   - Return list of Source dataclass objects
 
 Research and populate actual RSS feed URLs for all 20+ sources.
+
+REVISION NEEDED — LT feedback (2026-04-04):
+  Sources added to sources.yaml but need URL validation and selector tuning:
+  - Consulting: Hackett Group, PwC, EY, Kearney, Digital Procurement World
+  - Upgraded: Deloitte (Tier 3→2, new insights URL), Accenture (Tier 3→2, new insights URL)
+  - Peer CPG (new category "peer_cpg"): Unilever, Mars, Mondelez, P&G, Kraft Heinz
+  Run scripts/seed_sources.py to validate all new URLs and selectors.
 ```
 
 **Task 2.1.2: RSS feed parser** ✅
@@ -241,6 +248,14 @@ Create prompts/context_preamble.md:
    Any news, updates, or analysis about these specific platforms is
    highly relevant and should receive a +2 bonus to its relevance score.
 
+   Peer / competitor CPG companies to watch for competitive intelligence:
+   - Unilever, Mars, Mondelez, Procter & Gamble, Kraft Heinz
+   - Any news about these companies' procurement digitization, sourcing
+     strategies, supplier programs, or technology adoption is relevant.
+   - General corporate news from these companies (earnings, marketing,
+     brand launches) should be EXCLUDED unless it directly relates to
+     procurement, supply chain technology, or digital transformation.
+
    The readers are VP and Director-level leaders who need to stay
    informed about:
    - Procurement technology platform developments (especially platforms above)
@@ -249,6 +264,7 @@ Create prompts/context_preamble.md:
    - Market moves (M&A, funding, partnerships in procuretech)
    - Strategic trends affecting CPO/procurement leadership
    - Regulatory and compliance changes affecting procurement
+   - What peer CPG companies are doing in digital procurement (competitive intelligence)
 
    Always evaluate content through the lens of: 'Would a Digital
    Procurement senior leader at a Fortune 500 CPG company find this
@@ -295,6 +311,8 @@ Create prompts/digest_composition.md with format instructions and examples.
 
 **Task 4.1.1: Design HTML email template**
 ```
+⚡ Use the /frontend-design skill for this task to generate the template.
+
 Create templates/digest_email.html (Jinja2 template):
   - Inline CSS (email clients strip <style> blocks in many cases)
   - Table-based layout for Outlook compatibility
