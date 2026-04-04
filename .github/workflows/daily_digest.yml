@@ -2,19 +2,54 @@ name: Daily Digest
 
 on:
   schedule:
-    # GitHub Actions cron is UTC. This matches 09:00 CET during standard time.
-    - cron: "0 8 * * 1-5"
+    # GitHub Actions supports timezone-aware schedules.
+    # 09:00 Europe/Madrid == 09:00 Spain local time year-round.
+    # This is 08:00 UTC in winter and 07:00 UTC in summer.
+    - cron: "0 9 * * 1-5"
+      timezone: "Europe/Madrid"
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run the pipeline without sending email"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dpns-daily-digest
+  cancel-in-progress: false
 
 jobs:
   run-digest:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      AGENTMAIL_API_KEY: ${{ secrets.AGENTMAIL_API_KEY }}
+      AGENTMAIL_INBOX_ID: ${{ secrets.AGENTMAIL_INBOX_ID }}
+      EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+      FEEDBACK_EMAIL: ${{ secrets.FEEDBACK_EMAIL }}
+      FEEDBACK_SUBJECT: ${{ secrets.FEEDBACK_SUBJECT }}
+      FEEDBACK_URL: ${{ secrets.FEEDBACK_URL }}
+      LOG_LEVEL: ${{ vars.LOG_LEVEL || 'INFO' }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: "pip"
+
       - name: Install dependencies
-        run: pip install -e .
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
       - name: Run pipeline
         run: python -m src.main

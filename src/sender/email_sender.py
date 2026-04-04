@@ -1,0 +1,160 @@
+from __future__ import annotations
+
+import time
+from collections.abc import Callable
+from typing import Any
+
+try:
+    from agentmail import AgentMail
+except ImportError:  # pragma: no cover - dependency is declared in pyproject
+    AgentMail = None
+
+from src.storage.db import DeliveryRecord, log_delivery, utc_now_iso
+from src.utils.config import AppConfig, RecipientConfig, load_config
+from src.utils.logging import get_logger
+
+MAX_SEND_ATTEMPTS = 3
+BASE_BACKOFF_SECONDS = 1.0
+
+
+def send_digest(
+    html: str,
+    plaintext: str,
+    subject: str,
+    *,
+    config: AppConfig | None = None,
+    run_id: int | None = None,
+    group: str | None = None,
+    client: Any | None = None,
+    sleep_fn: Callable[[float], None] = time.sleep,
+) -> bool:
+    """Send a rendered digest email through AgentMail."""
+    config = config or load_config()
+    logger = get_logger(__name__, pipeline_stage="sender")
+
+    recipients = _resolve_recipients(config, group=group)
+    recipient_emails = [recipient.email for recipient in recipients]
+    recipient_count = len(recipient_emails)
+    active_group = group or config.default_recipient_group
+
+    if recipient_count == 0:
+        message = f"No recipients configured for group '{active_group}'"
+        logger.warning(
+            "email_delivery_skipped",
+            recipient_group=active_group,
+            recipient_count=0,
+            reason=message,
+        )
+        _record_delivery(config=config, run_id=run_id, recipient_count=0, status="skipped", error=message)
+        return False
+
+    if client is None:
+        if AgentMail is None:
+            raise RuntimeError("agentmail is not installed; cannot send digest")
+        client = AgentMail(api_key=config.env.agentmail_api_key)
+
+    send_kwargs = {
+        "to": config.env.email_from,
+        "bcc": recipient_emails,
+        "subject": subject,
+        "html": html,
+        "text": plaintext,
+        "reply_to": config.env.email_from,
+    }
+
+    last_error: str | None = None
+    for attempt in range(1, MAX_SEND_ATTEMPTS + 1):
+        try:
+            response = client.inboxes.messages.send(
+                config.env.agentmail_inbox_id,
+                **send_kwargs,
+            )
+            logger.info(
+                "email_delivery_succeeded",
+                recipient_group=active_group,
+                recipient_count=recipient_count,
+                attempt=attempt,
+                subject=subject,
+                message_id=getattr(response, "id", None),
+            )
+            _record_delivery(
+                config=config,
+                run_id=run_id,
+                recipient_count=recipient_count,
+                status="sent",
+                error=None,
+            )
+            return True
+        except Exception as exc:  # pragma: no cover - SDK exception types vary
+            last_error = str(exc)
+            logger.warning(
+                "email_delivery_attempt_failed",
+                recipient_group=active_group,
+                recipient_count=recipient_count,
+                attempt=attempt,
+                max_attempts=MAX_SEND_ATTEMPTS,
+                error=last_error,
+            )
+            if attempt < MAX_SEND_ATTEMPTS:
+                sleep_fn(BASE_BACKOFF_SECONDS * (2 ** (attempt - 1)))
+
+    logger.error(
+        "email_delivery_failed",
+        recipient_group=active_group,
+        recipient_count=recipient_count,
+        subject=subject,
+        error=last_error,
+    )
+    _record_delivery(
+        config=config,
+        run_id=run_id,
+        recipient_count=recipient_count,
+        status="failed",
+        error=last_error,
+    )
+    return False
+
+
+def _resolve_recipients(config: AppConfig, *, group: str | None) -> list[RecipientConfig]:
+    group_name = group or config.default_recipient_group
+    recipients = config.recipient_groups.get(group_name)
+    if recipients is None:
+        raise ValueError(f"Unknown recipient group '{group_name}'")
+    return _deduplicate_recipients(recipients)
+
+
+def _deduplicate_recipients(recipients: list[RecipientConfig]) -> list[RecipientConfig]:
+    unique_recipients: list[RecipientConfig] = []
+    seen: set[str] = set()
+
+    for recipient in recipients:
+        normalized_email = recipient.email.strip().lower()
+        if normalized_email in seen:
+            continue
+        seen.add(normalized_email)
+        unique_recipients.append(recipient)
+
+    return unique_recipients
+
+
+def _record_delivery(
+    *,
+    config: AppConfig,
+    run_id: int | None,
+    recipient_count: int,
+    status: str,
+    error: str | None,
+) -> None:
+    if run_id is None:
+        return
+
+    log_delivery(
+        config.settings.database_path,
+        DeliveryRecord(
+            run_id=run_id,
+            sent_at=utc_now_iso(),
+            recipient_count=recipient_count,
+            status=status,
+            error=error,
+        ),
+    )

@@ -27,6 +27,9 @@ def test_load_config_reads_defaults() -> None:
     assert config.settings.llm_model_fallback == "anthropic/claude-4-5-haiku"
     assert len(config.sources) >= 20
     assert config.env.email_from == "news-scout@example.com"
+    assert config.default_recipient_group == "test"
+    assert set(config.recipient_groups) == {"leadership", "extended", "test"}
+    assert [recipient.email for recipient in config.recipients] == ["juancho704@gmail.com"]
 
 
 def test_load_config_allows_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -37,11 +40,12 @@ def test_load_config_allows_env_override(monkeypatch: pytest.MonkeyPatch) -> Non
     assert config.settings.max_digest_items == 12
 
 
-def test_load_config_requires_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_load_config_requires_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.delenv("OPENROUTER_API_KEY")
+    missing_env_file = tmp_path / "missing.env"
 
     with pytest.raises(ConfigError):
-        load_config()
+        load_config(env_file=missing_env_file)
 
 
 def test_load_config_can_use_custom_env_file(tmp_path: Path) -> None:
@@ -113,3 +117,43 @@ def test_load_config_rejects_invalid_source_category(monkeypatch: pytest.MonkeyP
 
     with pytest.raises(ConfigError, match="category must be one of"):
         load_config()
+
+
+def test_load_config_supports_legacy_recipient_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_read_yaml(path: Path) -> dict:
+        if path.name == "settings.yaml":
+            return {
+                "max_articles_per_source": 10,
+                "max_digest_items": 15,
+                "relevance_threshold": 6,
+                "digest_send_time": "09:00",
+                "timezone": "Central European Time",
+                "llm_model": "anthropic/claude-sonnet-4-6",
+                "llm_model_fallback": "anthropic/claude-4-5-haiku",
+                "database_path": "data/dpns.db",
+                "log_level": "INFO",
+                "log_file": "data/logs/dpns.jsonl",
+                "dry_run": True,
+                "pipeline_timeout": 600,
+                "fetch_concurrency": 5,
+                "rss_lookback_hours": 48,
+                "dedup_window_days": 7,
+                "request_timeout_seconds": 15.0,
+                "rate_limit_seconds": 1.0,
+            }
+        if path.name == "sources.yaml":
+            return {"sources": []}
+        if path.name == "recipients.yaml":
+            return {
+                "default_group": "leadership",
+                "recipients": [{"email": "leader@example.com"}],
+            }
+        raise AssertionError(path)
+
+    monkeypatch.setattr("src.utils.config._read_yaml", fake_read_yaml)
+
+    config = load_config()
+
+    assert config.default_recipient_group == "leadership"
+    assert list(config.recipient_groups) == ["leadership"]
+    assert [recipient.email for recipient in config.recipients] == ["leader@example.com"]

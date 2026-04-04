@@ -72,6 +72,8 @@ class AppConfig:
     env: EnvConfig
     sources: list[SourceConfig]
     recipients: list[RecipientConfig]
+    recipient_groups: dict[str, list[RecipientConfig]]
+    default_recipient_group: str
 
 
 def load_config(env_file: Path | None = None) -> AppConfig:
@@ -142,9 +144,17 @@ def load_config(env_file: Path | None = None) -> AppConfig:
     )
 
     sources = _build_sources(sources_data)
-    recipients = _build_recipients(recipients_data)
+    recipient_groups, default_recipient_group = _build_recipient_groups(recipients_data)
+    recipients = list(recipient_groups[default_recipient_group])
 
-    return AppConfig(settings=settings, env=env, sources=sources, recipients=recipients)
+    return AppConfig(
+        settings=settings,
+        env=env,
+        sources=sources,
+        recipients=recipients,
+        recipient_groups=recipient_groups,
+        default_recipient_group=default_recipient_group,
+    )
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:
@@ -246,19 +256,66 @@ def _build_sources(config: dict[str, Any]) -> list[SourceConfig]:
     return sources
 
 
-def _build_recipients(config: dict[str, Any]) -> list[RecipientConfig]:
-    raw_recipients = config.get("recipients", [])
+def _build_recipient_groups(
+    config: dict[str, Any],
+) -> tuple[dict[str, list[RecipientConfig]], str]:
+    raw_groups = config.get("groups")
+    raw_recipients = config.get("recipients")
+
+    if raw_groups is not None:
+        if raw_recipients is not None:
+            raise ConfigError(
+                "recipients.yaml cannot define both 'groups' and 'recipients'"
+            )
+        if not isinstance(raw_groups, dict):
+            raise ConfigError("recipients.yaml 'groups' must be a mapping")
+
+        recipient_groups: dict[str, list[RecipientConfig]] = {}
+        for group_name, group_recipients in raw_groups.items():
+            if not _is_non_empty_string(group_name):
+                raise ConfigError("recipient group names must be non-empty strings")
+            recipient_groups[group_name] = _build_recipients(
+                group_recipients,
+                section=f"groups.{group_name}",
+            )
+
+        if not recipient_groups:
+            raise ConfigError("recipients.yaml 'groups' must define at least one group")
+
+        default_group = str(
+            config.get(
+                "default_group",
+                "leadership" if "leadership" in recipient_groups else next(iter(recipient_groups)),
+            )
+        ).strip()
+        if default_group not in recipient_groups:
+            raise ConfigError(
+                f"default_group '{default_group}' is not defined in recipients.yaml"
+            )
+        return recipient_groups, default_group
+
+    recipient_groups = {
+        str(config.get("default_group", "default")).strip() or "default": _build_recipients(
+            raw_recipients if raw_recipients is not None else [],
+            section="recipients",
+        )
+    }
+    default_group = next(iter(recipient_groups))
+    return recipient_groups, default_group
+
+
+def _build_recipients(raw_recipients: Any, *, section: str) -> list[RecipientConfig]:
     if not isinstance(raw_recipients, list):
-        raise ConfigError("recipients.yaml must contain a 'recipients' list")
+        raise ConfigError(f"{section} must be a list")
 
     recipients: list[RecipientConfig] = []
     for index, item in enumerate(raw_recipients, start=1):
         if not isinstance(item, dict):
-            raise ConfigError(f"recipients[{index}] must be a mapping")
+            raise ConfigError(f"{section}[{index}] must be a mapping")
 
         recipient = RecipientConfig(**item)
         if not _is_non_empty_string(recipient.email):
-            raise ConfigError(f"recipients[{index}].email is required")
+            raise ConfigError(f"{section}[{index}].email is required")
         recipients.append(recipient)
     return recipients
 

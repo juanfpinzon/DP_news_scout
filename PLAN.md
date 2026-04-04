@@ -222,7 +222,7 @@ Build src/fetcher/__init__.py with fetch_all_sources():
 
 ### Epic 3.1 — LLM Integration
 
-**Task 3.1.1: LLM client with fallback**
+**Task 3.1.1: LLM client with fallback** ✅
 ```
 Build src/analyzer/llm_client.py:
   - class LLMClient using openai SDK pointed at OpenRouter:
@@ -234,7 +234,7 @@ Build src/analyzer/llm_client.py:
   - Cost estimation: log estimated cost per call (using OpenRouter /api/v1/generation metadata)
 ```
 
-**Task 3.1.2: Context preamble prompt**
+**Task 3.1.2: Context preamble prompt** ✅
 ```
 Create prompts/context_preamble.md:
   "You are an expert editorial assistant for the Digital Procurement
@@ -278,7 +278,7 @@ Create prompts/context_preamble.md:
    actionable or strategically relevant?'"
 ```
 
-**Task 3.1.3: Relevance scoring**
+**Task 3.1.3: Relevance scoring** ✅
 ```
 Build src/analyzer/relevance.py:
   - Takes a batch of RawArticle objects
@@ -292,7 +292,7 @@ Build src/analyzer/relevance.py:
 Create prompts/relevance_scoring.md with the scoring rubric.
 ```
 
-**Task 3.1.4: Digest composition**
+**Task 3.1.4: Digest composition** ✅
 ```
 Build src/analyzer/digest.py:
   - Takes top ~15 scored articles
@@ -316,7 +316,7 @@ Create prompts/digest_composition.md with format instructions and examples.
 
 ### Epic 4.1 — Email Template & Renderer
 
-**Task 4.1.1: Design HTML email template**
+**Task 4.1.1: Design HTML email template** ✅
 ```
 ⚡ Use the /frontend-design skill for this task to generate the template.
 
@@ -337,7 +337,7 @@ Create templates/digest_email.html (Jinja2 template):
 Compile/inline using premailer for final output.
 ```
 
-**Task 4.1.2: HTML email builder**
+**Task 4.1.2: HTML email builder** ✅
 ```
 Build src/renderer/html_email.py:
   - function render_digest(digest: Digest, issue_number: int, date: str) -> str
@@ -347,7 +347,7 @@ Build src/renderer/html_email.py:
   - Return HTML string
 ```
 
-**Task 4.1.3: Plain-text fallback**
+**Task 4.1.3: Plain-text fallback** ✅
 ```
 Build src/renderer/plaintext.py:
   - function render_plaintext(digest: Digest, issue_number: int, date: str) -> str
@@ -372,7 +372,7 @@ Build src/renderer/plaintext.py:
     ...
 ```
 
-**Task 4.1.4: Email preview script**
+**Task 4.1.4: Email preview script** ✅
 ```
 Build scripts/test_email.py:
   - Generate a digest with mock data (realistic sample articles)
@@ -387,7 +387,7 @@ Build scripts/test_email.py:
 
 ### Epic 5.1 — Sender & Scheduling
 
-**Task 5.1.1: Email sender**
+**Task 5.1.1: Email sender** ✅
 ```
 Build src/sender/email_sender.py:
   - function send_digest(html: str, plaintext: str, subject: str) -> bool
@@ -409,7 +409,7 @@ Create config/recipients.yaml:
   - Self-serve subscribe/unsubscribe is a v2 enhancement
 ```
 
-**Task 5.1.2: Pipeline orchestrator**
+**Task 5.1.2: Pipeline orchestrator** ✅
 ```
 Build src/main.py:
   - function run_pipeline():
@@ -426,7 +426,7 @@ Build src/main.py:
   - CLI entry point: `python -m src.main`
 ```
 
-**Task 5.1.3: Manual run script**
+**Task 5.1.3: Manual run script** ✅
 ```
 Build scripts/run_manual.py:
   - Parse CLI args:
@@ -437,7 +437,7 @@ Build scripts/run_manual.py:
   - Call pipeline with appropriate flags
 ```
 
-**Task 5.1.4: GitHub Actions cron**
+**Task 5.1.4: GitHub Actions cron** ✅
 ```
 Create .github/workflows/daily_digest.yml:
   - cron: "0 13 * * 1-5"  (1 PM UTC = 9 AM ET, weekdays only)

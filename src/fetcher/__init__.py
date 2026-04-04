@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 
 import httpx
@@ -19,6 +20,21 @@ from src.utils.logging import get_logger
 FetchResult = tuple[bool, list[RawArticle]]
 
 
+@dataclass(slots=True)
+class FetchSummary:
+    articles: list[RawArticle]
+    sources_attempted: int
+    sources_succeeded: int
+    sources_failed: int
+    articles_found: int
+    articles_deduplicated: int
+    articles_saved: int
+
+    @property
+    def total_fetch_outage(self) -> bool:
+        return self.sources_attempted > 0 and self.sources_succeeded == 0 and self.sources_failed > 0
+
+
 async def fetch_all_sources(
     *,
     sources: list[Source] | None = None,
@@ -27,7 +43,30 @@ async def fetch_all_sources(
     logger=None,
     client: httpx.AsyncClient | None = None,
     now: datetime | None = None,
+    persist_to_db: bool = True,
 ) -> list[RawArticle]:
+    summary = await fetch_all_sources_report(
+        sources=sources,
+        settings=settings,
+        database_path=database_path,
+        logger=logger,
+        client=client,
+        now=now,
+        persist_to_db=persist_to_db,
+    )
+    return summary.articles
+
+
+async def fetch_all_sources_report(
+    *,
+    sources: list[Source] | None = None,
+    settings: Settings | None = None,
+    database_path: str | None = None,
+    logger=None,
+    client: httpx.AsyncClient | None = None,
+    now: datetime | None = None,
+    persist_to_db: bool = True,
+) -> FetchSummary:
     if settings is None or database_path is None:
         app_config = load_config()
         settings = settings or app_config.settings
@@ -67,9 +106,13 @@ async def fetch_all_sources(
         database_path=database_path,
         dedup_window_days=settings.dedup_window_days,
     )
-    stored_count = save_articles(
-        database_path,
-        [article.to_record() for article in deduplicated_articles],
+    stored_count = (
+        save_articles(
+            database_path,
+            [article.to_record() for article in deduplicated_articles],
+        )
+        if persist_to_db
+        else 0
     )
 
     logger.info(
@@ -80,8 +123,17 @@ async def fetch_all_sources(
         articles_found=len(raw_articles),
         articles_deduplicated=len(deduplicated_articles),
         articles_saved=stored_count,
+        persisted_to_db=persist_to_db,
     )
-    return deduplicated_articles
+    return FetchSummary(
+        articles=deduplicated_articles,
+        sources_attempted=len(sources),
+        sources_succeeded=sources_succeeded,
+        sources_failed=sources_failed,
+        articles_found=len(raw_articles),
+        articles_deduplicated=len(deduplicated_articles),
+        articles_saved=stored_count,
+    )
 
 
 async def _fetch_single_source(
@@ -160,8 +212,10 @@ def _count_fetch_results(results: Sequence[FetchResult]) -> tuple[int, int]:
 __all__ = [
     "RawArticle",
     "Source",
+    "FetchSummary",
     "deduplicate_articles",
     "fetch_all_sources",
+    "fetch_all_sources_report",
     "fetch_rss",
     "load_source_registry",
     "normalize_url",

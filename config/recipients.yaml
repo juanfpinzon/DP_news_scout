@@ -1,1 +1,7 @@
-recipients: []
+default_group: test
+
+groups:
+  leadership: []
+  extended: []
+  test:
+    - email: juancho704@gmail.com

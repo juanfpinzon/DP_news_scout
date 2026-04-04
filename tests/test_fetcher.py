@@ -8,7 +8,13 @@ import httpx
 import pytest
 import src.fetcher as fetcher_module
 
-from src.fetcher import fetch_all_sources, fetch_rss, load_source_registry, scrape_source
+from src.fetcher import (
+    fetch_all_sources,
+    fetch_all_sources_report,
+    fetch_rss,
+    load_source_registry,
+    scrape_source,
+)
 from src.fetcher.dedup import deduplicate_articles, normalize_url
 from src.fetcher.models import RawArticle, Source
 from src.fetcher.rss import RSSFetchError
@@ -724,6 +730,65 @@ def test_fetch_all_sources_continues_when_one_source_fails(tmp_path) -> None:
     assert complete_event["sources_succeeded"] == 1
     assert complete_event["sources_failed"] == 1
     assert complete_event["articles_found"] == 1
+
+
+def test_fetch_all_sources_report_can_skip_database_persistence(tmp_path) -> None:
+    now = datetime(2026, 3, 31, 9, 0, tzinfo=timezone.utc)
+    database_path = str(tmp_path / "dpns.db")
+    logger = DummyLogger()
+    settings = _settings(database_path)
+    rss_body = dedent(
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0">
+          <channel>
+            <item>
+              <title>Preview story</title>
+              <link>https://example.com/preview-story</link>
+              <pubDate>Mon, 30 Mar 2026 08:00:00 GMT</pubDate>
+            </item>
+          </channel>
+        </rss>
+        """
+    ).strip()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(200, text="User-agent: *\nAllow: /\n")
+        if request.url.path == "/preview.xml":
+            return httpx.Response(200, text=rss_body)
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    sources = [
+        Source(
+            name="Preview Feed",
+            url="https://example.com/preview.xml",
+            tier=1,
+            method="rss",
+            active=True,
+            category="trade_media",
+        )
+    ]
+
+    try:
+        summary = asyncio.run(
+            fetch_all_sources_report(
+                sources=sources,
+                settings=settings,
+                database_path=database_path,
+                logger=logger,
+                client=client,
+                now=now,
+                persist_to_db=False,
+            )
+        )
+    finally:
+        asyncio.run(client.aclose())
+
+    assert [article.url for article in summary.articles] == ["https://example.com/preview-story"]
+    assert summary.articles_saved == 0
+    assert get_recent_urls(database_path, days=7) == set()
 
 
 def _settings(database_path: str) -> Settings:
