@@ -9,6 +9,8 @@ from typing import Any
 import yaml
 from dotenv import load_dotenv
 
+from src.utils.source_validation import validate_source_payload
+
 ROOT_DIR = Path(__file__).resolve().parents[2]
 CONFIG_DIR = ROOT_DIR / "config"
 DEFAULT_ENV_FILE = ROOT_DIR / ".env"
@@ -239,22 +241,8 @@ def _build_sources(config: dict[str, Any]) -> list[SourceConfig]:
         if not isinstance(item, dict):
             raise ConfigError(f"sources[{index}] must be a mapping")
 
-        source = SourceConfig(**item)
-        if not _is_non_empty_string(source.name):
-            raise ConfigError(f"sources[{index}].name is required")
-        if not _is_non_empty_string(source.url):
-            raise ConfigError(f"sources[{index}].url is required")
-        if source.tier is None or source.tier <= 0:
-            raise ConfigError(f"sources[{index}].tier must be greater than 0")
-        if source.method not in {"rss", "scrape"}:
-            raise ConfigError(f"sources[{index}].method must be 'rss' or 'scrape'")
-        if not isinstance(source.active, bool):
-            raise ConfigError(f"sources[{index}].active must be a boolean")
-        if not _is_non_empty_string(source.category):
-            raise ConfigError(f"sources[{index}].category is required")
-        if source.selectors is not None and not isinstance(source.selectors, dict):
-            raise ConfigError(f"sources[{index}].selectors must be a mapping when provided")
-        sources.append(source)
+        normalized = validate_source_payload(item, index=index, error_cls=ConfigError)
+        sources.append(SourceConfig(**normalized))
     return sources
 
 

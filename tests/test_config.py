@@ -68,3 +68,48 @@ def test_load_config_rejects_invalid_send_time(monkeypatch: pytest.MonkeyPatch) 
 
     with pytest.raises(ConfigError):
         load_config()
+
+
+def test_load_config_rejects_invalid_source_category(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_read_yaml(path: Path) -> dict:
+        if path.name == "settings.yaml":
+            return {
+                "max_articles_per_source": 10,
+                "max_digest_items": 15,
+                "relevance_threshold": 6,
+                "digest_send_time": "09:00",
+                "timezone": "Central European Time",
+                "llm_model": "anthropic/claude-sonnet-4-6",
+                "llm_model_fallback": "anthropic/claude-4-5-haiku",
+                "database_path": "data/dpns.db",
+                "log_level": "INFO",
+                "log_file": "data/logs/dpns.jsonl",
+                "dry_run": True,
+                "pipeline_timeout": 600,
+                "fetch_concurrency": 5,
+                "rss_lookback_hours": 48,
+                "dedup_window_days": 7,
+                "request_timeout_seconds": 15.0,
+                "rate_limit_seconds": 1.0,
+            }
+        if path.name == "sources.yaml":
+            return {
+                "sources": [
+                    {
+                        "name": "Bad Category Source",
+                        "url": "https://example.com/feed.xml",
+                        "tier": 1,
+                        "method": "rss",
+                        "active": True,
+                        "category": "unknown",
+                    }
+                ]
+            }
+        if path.name == "recipients.yaml":
+            return {"recipients": [{"email": "reader@example.com"}]}
+        raise AssertionError(path)
+
+    monkeypatch.setattr("src.utils.config._read_yaml", fake_read_yaml)
+
+    with pytest.raises(ConfigError, match="category must be one of"):
+        load_config()

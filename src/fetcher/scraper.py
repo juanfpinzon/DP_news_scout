@@ -268,6 +268,13 @@ def _extract_url(
     selector: str,
     attribute: str,
 ) -> str | None:
+    # Check the container itself first (handles cases where the article
+    # container is an <a> tag, e.g. Webflow .w-inline-block links).
+    if container.name == "a" and container.get("href"):
+        url = coerce_absolute_url(base_url, container.get("href"))
+        if url:
+            return url
+
     for node in container.select(selector):
         if attribute in node.attrs:
             url = coerce_absolute_url(base_url, node.get(attribute))

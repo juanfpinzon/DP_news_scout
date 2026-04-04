@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Sequence
+from datetime import datetime
 
 import httpx
 
@@ -25,6 +26,7 @@ async def fetch_all_sources(
     database_path: str | None = None,
     logger=None,
     client: httpx.AsyncClient | None = None,
+    now: datetime | None = None,
 ) -> list[RawArticle]:
     if settings is None or database_path is None:
         app_config = load_config()
@@ -52,6 +54,7 @@ async def fetch_all_sources(
                     rate_limiter=rate_limiter,
                     robots_policy=robots_policy,
                     logger=logger,
+                    now=now,
                 )
                 for source in sources
             ]
@@ -90,6 +93,7 @@ async def _fetch_single_source(
     rate_limiter: DomainRateLimiter,
     robots_policy: RobotsPolicy,
     logger,
+    now: datetime | None,
 ) -> FetchResult:
     async with semaphore:
         try:
@@ -99,6 +103,7 @@ async def _fetch_single_source(
                 settings=settings,
                 rate_limiter=rate_limiter,
                 robots_policy=robots_policy,
+                now=now,
             )
         except Exception as exc:
             logger.warning(
@@ -126,6 +131,7 @@ async def _dispatch_source_fetch(
     settings: Settings,
     rate_limiter: DomainRateLimiter,
     robots_policy: RobotsPolicy,
+    now: datetime | None,
 ) -> list[RawArticle]:
     shared_kwargs = {
         "client": client,
@@ -134,6 +140,7 @@ async def _dispatch_source_fetch(
         "timeout_seconds": settings.request_timeout_seconds,
         "rate_limiter": rate_limiter,
         "robots_policy": robots_policy,
+        "now": now,
     }
 
     if source.method == "rss":

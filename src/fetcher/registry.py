@@ -7,6 +7,7 @@ import yaml
 
 from src.fetcher.models import Source
 from src.utils.config import CONFIG_DIR, ConfigError
+from src.utils.source_validation import validate_source_payload
 
 DEFAULT_SOURCE_REGISTRY = CONFIG_DIR / "sources.yaml"
 
@@ -47,36 +48,14 @@ def _read_registry(path: Path) -> dict[str, Any]:
 
 
 def _build_source(payload: dict[str, Any], index: int) -> Source:
-    required_string_fields = ("name", "url", "method", "category")
-    for field_name in required_string_fields:
-        value = payload.get(field_name)
-        if not isinstance(value, str) or not value.strip():
-            raise ConfigError(f"sources[{index}].{field_name} is required")
-
-    tier = payload.get("tier")
-    if not isinstance(tier, int) or tier <= 0:
-        raise ConfigError(f"sources[{index}].tier must be greater than 0")
-
-    method = str(payload["method"]).strip()
-    if method not in {"rss", "scrape"}:
-        raise ConfigError(f"sources[{index}].method must be 'rss' or 'scrape'")
-
-    active = payload.get("active", True)
-    if not isinstance(active, bool):
-        raise ConfigError(f"sources[{index}].active must be a boolean")
-
-    selectors = payload.get("selectors", {})
-    if selectors is None:
-        selectors = {}
-    if not isinstance(selectors, dict):
-        raise ConfigError(f"sources[{index}].selectors must be a mapping when provided")
+    normalized = validate_source_payload(payload, index=index, error_cls=ConfigError)
 
     return Source(
-        name=str(payload["name"]).strip(),
-        url=str(payload["url"]).strip(),
-        tier=tier,
-        method=method,
-        active=active,
-        category=str(payload["category"]).strip(),
-        selectors=dict(selectors),
+        name=normalized["name"],
+        url=normalized["url"],
+        tier=normalized["tier"],
+        method=normalized["method"],
+        active=normalized["active"],
+        category=normalized["category"],
+        selectors=normalized["selectors"],
     )

@@ -17,23 +17,17 @@ selector_presets:
     link: "a[href]"
     date: "time, .date, .published, .post-date, .news-date"
     summary: "p, .excerpt, .summary, .description, .cmp-teaser__description"
+  webflow_scrape: &webflow_scrape
+    article: ".w-dyn-item"
+    title: "h1, h2, h3, h4, h5, h6"
+    link: "a[href]"
+    date: "time, .date, .published, .post-date"
+    summary: "p, .excerpt, .summary, .description"
 
 sources:
-  - name: Gartner Procurement Insights
-    url: "https://www.gartner.com/en/procurement/insights"
-    tier: 1
-    method: "scrape"
-    active: true
-    category: "analyst"
-    selectors: *generic_scrape
-
-  - name: McKinsey Operations Insights
-    url: "https://www.mckinsey.com/capabilities/operations/our-insights"
-    tier: 1
-    method: "scrape"
-    active: true
-    category: "consulting"
-    selectors: *generic_scrape
+  # =========================================================================
+  # TIER 1 — Must-fetch sources
+  # =========================================================================
 
   - name: Spend Matters
     url: "https://spendmatters.com/feed/"
@@ -56,12 +50,28 @@ sources:
     active: true
     category: "trade_media"
 
-  - name: Procurement Leaders
-    url: "https://procurementleaders.com/feed/"
+  - name: McKinsey Operations Insights
+    url: "https://www.mckinsey.com/insights/rss"
     tier: 1
     method: "rss"
     active: true
-    category: "community"
+    category: "consulting"
+    # Switched from scrape (timeout) to RSS feed — confirmed working 2026-04-04
+
+  - name: Gartner Procurement Insights
+    url: "https://www.gartner.com/en/procurement/insights"
+    tier: 1
+    method: "scrape"
+    active: false
+    category: "analyst"
+    selectors: *generic_scrape
+    # DEACTIVATED: 403 — aggressive bot protection. Needs Playwright.
+
+  # =========================================================================
+  # TIER 2 — Supplemental sources
+  # =========================================================================
+
+  # --- Vendors ---
 
   - name: SAP Ariba
     url: "https://news.sap.com/tags/sap-ariba/"
@@ -72,12 +82,18 @@ sources:
     selectors: *newsroom_scrape
 
   - name: Archlet
-    url: "https://archlet.io/resources"
+    url: "https://www.archlet.io/resources"
     tier: 2
     method: "scrape"
     active: true
     category: "vendor"
-    selectors: *resource_scrape
+    selectors:
+      article: "._12col-grid.is-resources .w-dyn-item, .resources-hero_coll-list .w-dyn-item"
+      title: "h1, h2, h3, h4, h5, h6"
+      link: "a[href]"
+      date: "time, .date, .published"
+      summary: "p, .excerpt, .summary, .description"
+    # Webflow site — custom selectors to avoid matching navbar w-dyn-items
 
   - name: Keelvar
     url: "https://www.keelvar.com/blog"
@@ -85,7 +101,13 @@ sources:
     method: "scrape"
     active: true
     category: "vendor"
-    selectors: *generic_scrape
+    selectors:
+      article: ".postcollectionitem"
+      title: "h1, h2, h3, h4, h5, h6"
+      link: "a[href]"
+      date: "time, .date, .published, .post-date"
+      summary: "p, .excerpt, .summary, .description"
+    # Webflow site — uses .postcollectionitem containers
 
   - name: SpendHQ
     url: "https://www.spendhq.com/resources/blog/"
@@ -94,30 +116,6 @@ sources:
     active: true
     category: "vendor"
     selectors: *resource_scrape
-
-  - name: Coupa
-    url: "https://www.coupa.com/newsroom/"
-    tier: 2
-    method: "scrape"
-    active: true
-    category: "vendor"
-    selectors: *newsroom_scrape
-
-  - name: Ivalua
-    url: "https://www.ivalua.com/blog/"
-    tier: 2
-    method: "scrape"
-    active: true
-    category: "vendor"
-    selectors: *generic_scrape
-
-  - name: JAGGAER
-    url: "https://www.jaggaer.com/blog/"
-    tier: 2
-    method: "scrape"
-    active: true
-    category: "vendor"
-    selectors: *generic_scrape
 
   - name: GEP
     url: "https://www.gep.com/blog/mind"
@@ -133,7 +131,14 @@ sources:
     method: "scrape"
     active: true
     category: "vendor"
-    selectors: *generic_scrape
+    selectors:
+      article: ".article-preview-block"
+      title: "h1, h2, h3, h4, h5, h6"
+      link_attr: "href"
+      link: "a[href]"
+      date: "time, .date, .published"
+      summary: "p, .excerpt, .summary, .description"
+    # Webflow site — .article-preview-block is an <a> tag with href
 
   - name: Sievo
     url: "https://sievo.com/news"
@@ -141,31 +146,201 @@ sources:
     method: "scrape"
     active: true
     category: "vendor"
+    selectors:
+      article: ".l-news-listing__item, .c-blog-item-big"
+      title: "h1, h2, h3, h4, h5, h6, .title"
+      link: "a[href]"
+      date: "time, .date, .published, .post-date"
+      summary: "p, .excerpt, .summary, .description"
+    # HubSpot CMS — .l-news-listing__item containers + featured .c-blog-item-big
+
+  - name: Coupa
+    url: "https://www.coupa.com/blog/"
+    tier: 2
+    method: "scrape"
+    active: false
+    category: "vendor"
     selectors: *newsroom_scrape
+    # DEACTIVATED: 403 — Cloudflare bot protection. Needs Playwright.
+
+  - name: Ivalua
+    url: "https://www.ivalua.com/blog/"
+    tier: 2
+    method: "scrape"
+    active: false
+    category: "vendor"
+    selectors: *generic_scrape
+    # DEACTIVATED: 403 — bot protection. Needs Playwright.
+
+  - name: JAGGAER
+    url: "https://www.jaggaer.com/blog/"
+    tier: 2
+    method: "scrape"
+    active: false
+    category: "vendor"
+    selectors: *generic_scrape
+    # DEACTIVATED: 403 — Cloudflare bot protection. Needs Playwright.
+
+  # --- Consulting ---
+
+  - name: Hackett Group Procurement
+    url: "https://www.thehackettgroup.com/feed/"
+    tier: 2
+    method: "rss"
+    active: true
+    category: "consulting"
+    # Switched from scrape (403) to RSS feed — confirmed working 2026-04-04
+
+  - name: EY Procurement
+    url: "https://www.ey.com/en_us/newsroom"
+    tier: 2
+    method: "scrape"
+    active: false
+    category: "consulting"
+    selectors: *newsroom_scrape
+    # DEACTIVATED: Newsroom is JS-rendered (skeleton loaders in static HTML).
+    # Needs Playwright.
+
+  - name: Deloitte Procurement Insights
+    url: "https://www.deloitte.com/us/en/insights/topics/supply-chain.html"
+    tier: 2
+    method: "scrape"
+    active: false
+    category: "consulting"
+    selectors: *generic_scrape
+    # DEACTIVATED: Old URL 404'd. New URL requires JS rendering (Akamai + Angular).
+    # Needs Playwright.
+
+  - name: Accenture Procurement Insights
+    url: "https://www.accenture.com/us-en/insights/operations/procurement-index"
+    tier: 2
+    method: "scrape"
+    active: false
+    category: "consulting"
+    selectors: *generic_scrape
+    # DEACTIVATED: 404 + anti-bot UA checks. Needs Playwright.
+
+  - name: PwC Procurement
+    url: "https://www.pwc.com/us/en/services/consulting/business-transformation/operations-transformation/digital-procurement.html"
+    tier: 2
+    method: "scrape"
+    active: false
+    category: "consulting"
+    selectors: *generic_scrape
+    # DEACTIVATED: Old URL 404'd. New page returned 403. Needs investigation.
+
+  - name: Kearney Procurement
+    url: "https://www.kearney.com/service/procurement/insights"
+    tier: 2
+    method: "scrape"
+    active: false
+    category: "consulting"
+    selectors: *resource_scrape
+    # DEACTIVATED: 403 — Cloudflare. Needs Playwright.
+
+  # --- Community ---
+
+  - name: Digital Procurement World
+    url: "https://conference.dpw.ai/"
+    tier: 2
+    method: "scrape"
+    active: true
+    category: "community"
+    selectors:
+      article: "article"
+      title: "h1, h2, h3, h4"
+      link: "a[href]"
+      date: "time, .date, .published"
+      summary: "p, .excerpt, .summary, .description"
+    # Rebranded from digitalprocurementworld.com (DNS dead) to dpw.ai
 
   - name: Procurious
     url: "https://www.procurious.com/procurement-news"
     tier: 2
     method: "scrape"
-    active: true
+    active: false
     category: "community"
     selectors: *newsroom_scrape
+    # DEACTIVATED: JS-rendered SPA — needs Playwright. Partial login wall.
+
+  - name: Procurement Leaders
+    url: "https://procurementleaders.com/feed/"
+    tier: 1
+    method: "rss"
+    active: false
+    category: "community"
+    # DEACTIVATED: 403 — paid membership platform with gated content.
+
+  # --- Trade media ---
 
   - name: Supply Chain Digital
     url: "https://supplychaindigital.com/"
     tier: 2
     method: "scrape"
-    active: true
+    active: false
     category: "trade_media"
     selectors: *generic_scrape
+    # DEACTIVATED: JS-rendered + likely Cloudflare. Needs Playwright.
 
-  - name: HBR Digital Transformation
-    url: "https://hbr.org/topic/subject/digital-transformation"
-    tier: 3
+  # --- Peer CPG companies (competitive intelligence) ---
+
+  - name: Mars Newsroom
+    url: "https://www.mars.com/news-and-stories"
+    tier: 2
     method: "scrape"
     active: true
+    category: "peer_cpg"
+    selectors: *newsroom_scrape
+
+  - name: Unilever Newsroom
+    url: "https://www.unilever.com/news/"
+    tier: 2
+    method: "scrape"
+    active: false
+    category: "peer_cpg"
+    selectors: *newsroom_scrape
+    # DEACTIVATED: 403 — bot protection. Needs Playwright.
+
+  - name: Mondelez Newsroom
+    url: "https://www.mondelezinternational.com/news/"
+    tier: 2
+    method: "scrape"
+    active: false
+    category: "peer_cpg"
+    selectors: *newsroom_scrape
+    # DEACTIVATED: JS-rendered (Next.js/React). Needs Playwright.
+
+  - name: Procter & Gamble Newsroom
+    url: "https://us.pg.com/newsroom/"
+    tier: 2
+    method: "scrape"
+    active: false
+    category: "peer_cpg"
+    selectors: *newsroom_scrape
+    # DEACTIVATED: JS-rendered (Contentful React shell). Needs Playwright.
+    # URL updated from news.pg.com to us.pg.com (redirect destination).
+
+  - name: Kraft Heinz Newsroom
+    url: "https://news.kraftheinzcompany.com/"
+    tier: 2
+    method: "scrape"
+    active: false
+    category: "peer_cpg"
+    selectors: *newsroom_scrape
+    # DEACTIVATED: 403 — bot protection. Needs Playwright.
+
+  # =========================================================================
+  # TIER 3 — Conditional sources
+  # =========================================================================
+
+  - name: HBR Digital Transformation
+    url: "http://feeds.hbr.org/harvardbusiness"
+    tier: 3
+    method: "rss"
+    active: true
     category: "mainstream"
-    selectors: *generic_scrape
+    # Switched from scrape (JS-rendered topic page) to site-wide RSS.
+    # Client-side filtering by relevance scoring will handle topic selection.
 
   - name: CIO Digital Transformation
     url: "https://www.cio.com/digital-transformation/"
@@ -179,107 +354,10 @@ sources:
     url: "https://www.bcg.com/capabilities/operations/insights"
     tier: 3
     method: "scrape"
-    active: true
+    active: false
     category: "consulting"
     selectors: *generic_scrape
-
-  - name: Deloitte Procurement Insights
-    url: "https://www2.deloitte.com/us/en/pages/operations/articles/procurement-insights.html"
-    tier: 2
-    method: "scrape"
-    active: true
-    category: "consulting"
-    selectors: *generic_scrape
-
-  - name: Accenture Procurement Insights
-    url: "https://www.accenture.com/us-en/insights/operations/procurement-index"
-    tier: 2
-    method: "scrape"
-    active: true
-    category: "consulting"
-    selectors: *generic_scrape
-
-  - name: Hackett Group Procurement
-    url: "https://www.thehackettgroup.com/insights/procurement/"
-    tier: 2
-    method: "scrape"
-    active: true
-    category: "consulting"
-    selectors: *resource_scrape
-
-  - name: PwC Procurement
-    url: "https://www.pwc.com/gx/en/issues/transformation/procurement.html"
-    tier: 2
-    method: "scrape"
-    active: true
-    category: "consulting"
-    selectors: *generic_scrape
-
-  - name: EY Procurement
-    url: "https://www.ey.com/en_gl/supply-chain/procurement"
-    tier: 2
-    method: "scrape"
-    active: true
-    category: "consulting"
-    selectors: *generic_scrape
-
-  - name: Kearney Procurement
-    url: "https://www.kearney.com/procurement/articles-insights"
-    tier: 2
-    method: "scrape"
-    active: true
-    category: "consulting"
-    selectors: *resource_scrape
-
-  - name: Digital Procurement World
-    url: "https://digitalprocurementworld.com/news/"
-    tier: 2
-    method: "scrape"
-    active: true
-    category: "community"
-    selectors: *newsroom_scrape
-
-  # --- Peer CPG companies (competitive intelligence) ---
-
-  - name: Unilever Newsroom
-    url: "https://www.unilever.com/news/"
-    tier: 2
-    method: "scrape"
-    active: true
-    category: "peer_cpg"
-    selectors: *newsroom_scrape
-
-  - name: Mars Newsroom
-    url: "https://www.mars.com/news-and-stories"
-    tier: 2
-    method: "scrape"
-    active: true
-    category: "peer_cpg"
-    selectors: *newsroom_scrape
-
-  - name: Mondelez Newsroom
-    url: "https://www.mondelezinternational.com/news/"
-    tier: 2
-    method: "scrape"
-    active: true
-    category: "peer_cpg"
-    selectors: *newsroom_scrape
-
-  - name: Procter & Gamble Newsroom
-    url: "https://news.pg.com/news-releases/"
-    tier: 2
-    method: "scrape"
-    active: true
-    category: "peer_cpg"
-    selectors: *newsroom_scrape
-
-  - name: Kraft Heinz Newsroom
-    url: "https://news.kraftheinzcompany.com/"
-    tier: 2
-    method: "scrape"
-    active: true
-    category: "peer_cpg"
-    selectors: *newsroom_scrape
+    # DEACTIVATED: 403 + JS-only rendering. No RSS feed available. Needs Playwright.
 
 # Source discovery gaps from the PRD that should be revisited after the
 # initial fetcher hardening pass:
@@ -287,3 +365,13 @@ sources:
 # - Pirt
 # - Tirzo
 # - Forbes procurement / supply chain landing page
+
+# Sources requiring Playwright (v2 enhancement) to activate:
+# - Gartner, BCG, Kearney (403 + bot protection)
+# - Deloitte, Accenture, PwC, EY (404/403 + JS rendering)
+# - Coupa, JAGGAER, Ivalua (Cloudflare 403)
+# - Supply Chain Digital (Cloudflare)
+# - Procurious (SPA + partial paywall)
+# - Unilever, Kraft Heinz (403 bot protection)
+# - Mondelez, P&G (JS-rendered SPAs)
+# - Procurement Leaders (paid membership — may never be scrapable)

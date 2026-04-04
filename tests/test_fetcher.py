@@ -14,7 +14,7 @@ from src.fetcher.models import RawArticle, Source
 from src.fetcher.rss import RSSFetchError
 from src.fetcher.scraper import JavaScriptRenderedPageError, ScrapeFetchError
 from src.storage.db import get_recent_urls, save_articles
-from src.utils.config import Settings
+from src.utils.config import ConfigError, Settings
 
 
 class DummyLogger:
@@ -48,6 +48,9 @@ def test_load_source_registry_filters_inactive_and_sorts_by_tier(tmp_path) -> No
                 category: trade_media
                 selectors:
                   article: article
+                  title: h2
+                  link: a[href]
+                  date: time
               - name: Disabled Source
                 url: https://example.com/off.xml
                 tier: 1
@@ -63,6 +66,48 @@ def test_load_source_registry_filters_inactive_and_sorts_by_tier(tmp_path) -> No
 
     assert [source.name for source in sources] == ["Tier 1 Source", "Tier 2 Source"]
     assert sources[0].selectors["article"] == "article"
+
+
+def test_load_source_registry_rejects_invalid_category(tmp_path) -> None:
+    registry = tmp_path / "sources.yaml"
+    registry.write_text(
+        dedent(
+            """
+            sources:
+              - name: Bad Category Source
+                url: https://example.com/feed.xml
+                tier: 1
+                method: rss
+                active: true
+                category: unknown
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="category must be one of"):
+        load_source_registry(registry)
+
+
+def test_load_source_registry_requires_scrape_selectors(tmp_path) -> None:
+    registry = tmp_path / "sources.yaml"
+    registry.write_text(
+        dedent(
+            """
+            sources:
+              - name: Missing Selectors
+                url: https://example.com/blog
+                tier: 1
+                method: scrape
+                active: true
+                category: vendor
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="selectors is required for scrape sources"):
+        load_source_registry(registry)
 
 
 def test_normalize_url_strips_tracking_and_www() -> None:
@@ -528,6 +573,7 @@ def test_fetch_all_sources_deduplicates_and_saves_articles(tmp_path) -> None:
                 database_path=database_path,
                 logger=logger,
                 client=client,
+                now=now,
             )
         )
     finally:
@@ -545,6 +591,7 @@ def test_fetch_all_sources_deduplicates_and_saves_articles(tmp_path) -> None:
 
 
 def test_fetch_all_sources_loads_registry_when_sources_not_provided(tmp_path, monkeypatch) -> None:
+    now = datetime(2026, 3, 31, 9, 0, tzinfo=timezone.utc)
     database_path = str(tmp_path / "dpns.db")
     logger = DummyLogger()
     settings = _settings(database_path)
@@ -591,6 +638,7 @@ def test_fetch_all_sources_loads_registry_when_sources_not_provided(tmp_path, mo
                 database_path=database_path,
                 logger=logger,
                 client=client,
+                now=now,
             )
         )
     finally:
@@ -601,6 +649,7 @@ def test_fetch_all_sources_loads_registry_when_sources_not_provided(tmp_path, mo
 
 
 def test_fetch_all_sources_continues_when_one_source_fails(tmp_path) -> None:
+    now = datetime(2026, 3, 31, 9, 0, tzinfo=timezone.utc)
     database_path = str(tmp_path / "dpns.db")
     logger = DummyLogger()
     settings = _settings(database_path)
@@ -656,6 +705,7 @@ def test_fetch_all_sources_continues_when_one_source_fails(tmp_path) -> None:
                 database_path=database_path,
                 logger=logger,
                 client=client,
+                now=now,
             )
         )
     finally:

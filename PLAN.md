@@ -136,7 +136,7 @@ Build src/storage/db.py:
 
 ### Epic 2.1 — Source Registry
 
-**Task 2.1.1: Build source registry** ✅ ⚠️ NEEDS REVISION (LT feedback 2026-04-04)
+**Task 2.1.1: Build source registry** ✅ REVISED (2026-04-04)
 ```
 Create config/sources.yaml with ALL sources:
   For each source, define:
@@ -156,12 +156,19 @@ Build src/fetcher/registry.py:
 
 Research and populate actual RSS feed URLs for all 20+ sources.
 
-REVISION NEEDED — LT feedback (2026-04-04):
-  Sources added to sources.yaml but need URL validation and selector tuning:
-  - Consulting: Hackett Group, PwC, EY, Kearney, Digital Procurement World
-  - Upgraded: Deloitte (Tier 3→2, new insights URL), Accenture (Tier 3→2, new insights URL)
-  - Peer CPG (new category "peer_cpg"): Unilever, Mars, Mondelez, P&G, Kraft Heinz
-  Run scripts/seed_sources.py to validate all new URLs and selectors.
+REVISION COMPLETED (2026-04-04):
+  - Implemented scripts/seed_sources.py (was a stub) — validates all URLs and selectors.
+  - Switched McKinsey, Hackett Group, HBR to confirmed working RSS feeds.
+  - Fixed DPW domain (digitalprocurementworld.com → conference.dpw.ai).
+  - Fixed P&G URL (news.pg.com → us.pg.com/newsroom redirect).
+  - Tuned selectors for Webflow sites: Archlet, Keelvar, Zip (custom CSS selectors).
+  - Tuned selectors for Sievo (HubSpot CMS: .l-news-listing__item, .c-blog-item-big).
+  - Fixed scraper _extract_url to handle <a> tag containers (Zip's .article-preview-block).
+  - Deactivated 17 sources that require Playwright (403 bot protection or JS-rendered):
+    Gartner, BCG, Kearney, Deloitte, Accenture, PwC, EY, Coupa, JAGGAER, Ivalua,
+    Supply Chain Digital, Procurious, Unilever, Kraft Heinz, Mondelez, P&G,
+    Procurement Leaders (paywall).
+  - Result: 16 active sources, all passing validation (0 failures, 0 warnings).
 ```
 
 **Task 2.1.2: RSS feed parser** ✅
