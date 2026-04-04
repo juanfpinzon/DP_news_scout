@@ -1,15 +1,35 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 from datetime import datetime, timezone
 
+import pytest
+from dotenv import dotenv_values
+import src.main as main_module
+
 from src.analyzer.digest import Digest, DigestItem, QuickHit
 from src.analyzer.relevance import ScoredArticle
-from src.fetcher import FetchSummary
+from src.fetcher import FetchSummary, load_source_registry as load_real_source_registry
 from src.fetcher.models import RawArticle, Source
 from src.main import run_pipeline
+from src.renderer.html_email import render_digest as render_html_digest
+from src.renderer.plaintext import render_plaintext as render_digest_plaintext
 from src.storage.db import get_recent_urls
-from src.utils.config import AppConfig, EnvConfig, RecipientConfig, Settings
+from src.utils.config import (
+    DEFAULT_ENV_FILE,
+    AppConfig,
+    EnvConfig,
+    RecipientConfig,
+    Settings,
+)
+
+
+REAL_PIPELINE_SOURCE_NAMES = {
+    "Spend Matters",
+    "CPO Rising",
+    "Hackett Group Procurement",
+}
 
 
 def test_run_pipeline_happy_path_sends_digest_and_updates_run(tmp_path, monkeypatch) -> None:
@@ -237,6 +257,119 @@ def test_run_pipeline_marks_failed_when_all_sources_fail(tmp_path, monkeypatch) 
     assert get_recent_urls(config.settings.database_path, days=7) == set()
 
 
+def test_run_pipeline_real_rss_and_llm_dry_run(tmp_path, monkeypatch) -> None:
+    if os.getenv("RUN_REAL_PIPELINE_TESTS") != "1":
+        pytest.skip("Set RUN_REAL_PIPELINE_TESTS=1 to enable the real RSS/LLM pipeline test")
+
+    if not _has_openrouter_api_key():
+        pytest.skip("OPENROUTER_API_KEY is required in the environment or .env")
+
+    selected_sources = [
+        source
+        for source in load_real_source_registry()
+        if source.name in REAL_PIPELINE_SOURCE_NAMES
+    ]
+    assert len(selected_sources) == len(REAL_PIPELINE_SOURCE_NAMES)
+
+    captured: dict[str, str] = {}
+
+    monkeypatch.setenv("DRY_RUN", "true")
+    monkeypatch.setenv("DPNS_DATABASE_PATH", str(tmp_path / "dpns.db"))
+    monkeypatch.setenv("LOG_FILE", str(tmp_path / "dpns.log"))
+    monkeypatch.setenv("MAX_ARTICLES_PER_SOURCE", "1")
+    monkeypatch.setenv("MAX_DIGEST_ITEMS", "3")
+    monkeypatch.setenv("RELEVANCE_THRESHOLD", "1")
+    monkeypatch.setenv("FETCH_CONCURRENCY", "3")
+    monkeypatch.setenv("RSS_LOOKBACK_HOURS", "2160")
+    monkeypatch.setenv("PIPELINE_TIMEOUT", "240")
+    monkeypatch.setenv("REQUEST_TIMEOUT_SECONDS", "20")
+    monkeypatch.setenv("RATE_LIMIT_SECONDS", "0")
+    monkeypatch.setenv("AGENTMAIL_API_KEY", "integration-test")
+    monkeypatch.setenv("AGENTMAIL_INBOX_ID", "dpns-integration-test")
+    monkeypatch.setenv("EMAIL_FROM", "news-scout@example.com")
+
+    monkeypatch.setattr("src.main.load_source_registry", lambda: selected_sources)
+    monkeypatch.setattr(
+        "src.main.send_digest",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("send_digest should not be called during dry runs")
+        ),
+    )
+
+    def capture_html(digest: Digest, issue_number: int, date: str) -> str:
+        html = render_html_digest(digest, issue_number=issue_number, date=date)
+        captured["html"] = html
+        captured["mode"] = "digest"
+        return html
+
+    def capture_plaintext(digest: Digest, issue_number: int, date: str) -> str:
+        plaintext = render_digest_plaintext(digest, issue_number=issue_number, date=date)
+        captured["plaintext"] = plaintext
+        return plaintext
+
+    def capture_no_news_email(*, issue_number: int, date_label: str) -> tuple[str, str]:
+        html, plaintext = main_module._build_no_news_email(
+            issue_number=issue_number,
+            date_label=date_label,
+        )
+        captured["html"] = html
+        captured["plaintext"] = plaintext
+        captured["mode"] = "no_news"
+        return html, plaintext
+
+    monkeypatch.setattr("src.main.render_digest", capture_html)
+    monkeypatch.setattr("src.main.render_plaintext", capture_plaintext)
+    monkeypatch.setattr("src.main._build_no_news_email", capture_no_news_email)
+
+    result = run_pipeline(now=datetime.now(timezone.utc))
+
+    assert result.status == "success"
+    assert result.dry_run is True
+    assert result.email_sent is False
+    assert result.run_id == 1
+    assert result.issue_number == 1
+    assert result.sources_fetched >= 1
+    assert result.subject.endswith("Issue #1")
+
+    html = captured["html"]
+    plaintext = captured["plaintext"]
+    mode = captured["mode"]
+
+    assert "<html" in html.lower()
+    assert "</html>" in html.lower()
+    assert "{{" not in html
+    assert "href=" in html
+
+    assert "DIGITAL PROCUREMENT NEWS SCOUT" in plaintext
+
+    if mode == "digest":
+        assert result.articles_found >= 1
+        assert result.relevant_articles >= 1
+        assert result.articles_included >= 1
+        assert "TOP STORY" in html
+        assert "TOP STORY" in plaintext
+        assert "→ Read more: https://" in plaintext
+    else:
+        assert mode == "no_news"
+        assert result.relevant_articles == 0
+        assert result.articles_included == 0
+        assert "No relevant digital procurement updates" in html
+        assert "No relevant digital procurement updates" in plaintext
+
+    with sqlite3.connect(tmp_path / "dpns.db") as connection:
+        row = connection.execute(
+            "SELECT status, sources_fetched, articles_found, articles_included, error_log "
+            "FROM pipeline_runs WHERE id = 1"
+        ).fetchone()
+
+    assert row is not None
+    assert row[0] == "success"
+    assert row[1] == result.sources_fetched
+    assert row[2] == result.articles_found
+    assert row[3] == result.articles_included
+    assert row[4] is None
+
+
 def _build_config(*, tmp_path, dry_run: bool) -> AppConfig:
     settings = Settings(
         max_articles_per_source=10,
@@ -368,3 +501,13 @@ def _make_fetch_summary(
         articles_deduplicated=len(articles),
         articles_saved=0,
     )
+
+
+def _has_openrouter_api_key() -> bool:
+    environment_value = os.getenv("OPENROUTER_API_KEY")
+    if environment_value is not None:
+        return bool(environment_value.strip())
+
+    env_values = dotenv_values(DEFAULT_ENV_FILE)
+    value = env_values.get("OPENROUTER_API_KEY")
+    return isinstance(value, str) and bool(value.strip())

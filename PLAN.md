@@ -458,7 +458,7 @@ Alternative: Railway/Render cron job config if self-hosted.
 
 ### Epic 6.1 — Testing
 
-**Task 6.1.1: Unit tests — Fetcher**
+**Task 6.1.1: Unit tests — Fetcher** ✅
 ```
 Build tests/test_fetcher.py:
   - Test RSS parsing with sample feed XML
@@ -468,7 +468,7 @@ Build tests/test_fetcher.py:
   - Mock HTTP responses (use respx or httpx mock)
 ```
 
-**Task 6.1.2: Unit tests — Analyzer**
+**Task 6.1.2: Unit tests — Analyzer** ✅
 ```
 Build tests/test_analyzer.py:
   - Test relevance scoring with mock LLM responses
@@ -477,7 +477,7 @@ Build tests/test_analyzer.py:
   - Test JSON parsing of LLM output (including malformed responses)
 ```
 
-**Task 6.1.3: Unit tests — Renderer**
+**Task 6.1.3: Unit tests — Renderer** ✅
 ```
 Build tests/test_renderer.py:
   - Test HTML rendering with sample digest data
@@ -486,7 +486,7 @@ Build tests/test_renderer.py:
   - Verify template handles empty sections gracefully
 ```
 
-**Task 6.1.4: Integration test — Full pipeline**
+**Task 6.1.4: Integration test — Full pipeline** ✅
 ```
 Build tests/test_pipeline.py:
   - End-to-end test with:
