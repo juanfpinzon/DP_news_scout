@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
@@ -50,6 +51,7 @@ async def score_articles(
     max_tokens: int = DEFAULT_MAX_TOKENS,
     logger: Any | None = None,
     progress_callback: Callable[[str], None] | None = None,
+    now: datetime | None = None,
 ) -> list[ScoredArticle]:
     if batch_size <= 0:
         raise ValueError("batch_size must be greater than 0")
@@ -91,7 +93,7 @@ async def score_articles(
         total_batches = (len(articles) + batch_size - 1) // batch_size
 
         for batch_index, batch in enumerate(_chunked(articles, batch_size), start=1):
-            user_prompt = _build_user_prompt(batch)
+            user_prompt = _build_user_prompt(batch, now=now)
             try:
                 response_text = await active_client.complete(
                     system_prompt=system_prompt,
@@ -174,7 +176,7 @@ def _build_system_prompt() -> str:
     return f"{context}\n\n{scoring}".strip()
 
 
-def _build_user_prompt(articles: list[RawArticle]) -> str:
+def _build_user_prompt(articles: list[RawArticle], *, now: datetime | None) -> str:
     if len({article.url for article in articles}) != len(articles):
         raise RelevanceScoringError("Each article in a scoring batch must have a unique URL")
 
@@ -194,6 +196,8 @@ def _build_user_prompt(articles: list[RawArticle]) -> str:
     }
 
     return (
+        f"Digest reference date: {(now.isoformat() if now is not None else 'current UTC time')}.\n"
+        "Fresh, clearly dated current-week developments should outrank older or undated items when relevance is comparable.\n"
         "Score every article below and return JSON only.\n"
         "Do not omit any article. Preserve each URL exactly as provided.\n\n"
         f"{json.dumps(payload, ensure_ascii=True, indent=2)}"

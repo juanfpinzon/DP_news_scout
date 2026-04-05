@@ -15,6 +15,18 @@ that context rigorously, especially:
 - Generic corporate news, earnings, marketing, product launches, and unrelated
   executive moves should score low unless they directly affect procurement.
 
+## Freshness Bias
+
+- This is a weekday morning digest, not a timeless reading list.
+- Strongly favor clearly dated developments from the last 24-72 hours when
+  relevance is similar.
+- Current-week launches, releases, partnerships, analyst notes, funding rounds,
+  product announcements, and customer deployments should be prioritized.
+- Older articles should score lower unless they remain unusually strategic and
+  still newly relevant to Digital Procurement leaders.
+- Articles with missing publication dates should be treated cautiously and
+  should not outrank clearly dated current-week news unless the signal is exceptional.
+
 ## Relevance Gates
 
 An article is relevant if it materially touches at least one of these areas:

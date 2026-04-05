@@ -4,9 +4,11 @@ import json
 import re
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
+from src.analyzer.freshness import article_priority_key, resolve_reference_time
 from src.analyzer.llm_client import LLMClient
 from src.analyzer.relevance import ScoredArticle
 from src.utils.config import AppConfig, Settings, load_config
@@ -58,6 +60,7 @@ async def compose_digest(
     max_tokens: int = DEFAULT_MAX_TOKENS,
     logger: Any | None = None,
     progress_callback: Callable[[str], None] | None = None,
+    now: datetime | None = None,
 ) -> Digest:
     if not articles:
         raise ValueError("compose_digest requires at least one scored article")
@@ -76,12 +79,15 @@ async def compose_digest(
 
     logger = logger or get_logger(__name__, pipeline_stage="analyzer")
     system_prompt = _build_system_prompt()
+    reference_now = resolve_reference_time(now)
     selected_articles = _select_articles(
         articles,
         limit=selected_limit,
         max_per_source=settings.max_digest_items_per_source,
+        now=reference_now,
+        current_week_days=settings.recency_priority_window_days,
     )
-    user_prompt = _build_user_prompt(selected_articles)
+    user_prompt = _build_user_prompt(selected_articles, now=reference_now)
 
     owns_client = llm_client is None
     if llm_client is None:
@@ -169,6 +175,8 @@ def _select_articles(
     *,
     limit: int,
     max_per_source: int,
+    now: datetime,
+    current_week_days: int,
 ) -> list[ScoredArticle]:
     if limit <= 0:
         return []
@@ -186,10 +194,10 @@ def _select_articles(
 
     for source_articles in grouped_articles.values():
         source_articles.sort(
-            key=lambda article: (
-                article.relevance_score,
-                article.published_at or "",
-                article.url,
+            key=lambda article: article_priority_key(
+                article,
+                now=now,
+                current_week_days=current_week_days,
             ),
             reverse=True,
         )
@@ -197,7 +205,11 @@ def _select_articles(
     source_order = sorted(
         grouped_articles,
         key=lambda source_key: (
-            grouped_articles[source_key][0].relevance_score,
+            article_priority_key(
+                grouped_articles[source_key][0],
+                now=now,
+                current_week_days=current_week_days,
+            ),
             canonical_source_names[source_key],
         ),
         reverse=True,
@@ -235,10 +247,10 @@ def _select_articles(
 
     leftovers = sorted(
         (article for article in articles if article.url not in selected_urls),
-        key=lambda article: (
-            article.relevance_score,
-            article.published_at or "",
-            article.url,
+        key=lambda article: article_priority_key(
+            article,
+            now=now,
+            current_week_days=current_week_days,
         ),
         reverse=True,
     )
@@ -256,7 +268,7 @@ def _build_system_prompt() -> str:
     return f"{context}\n\n{composition}".strip()
 
 
-def _build_user_prompt(articles: list[ScoredArticle]) -> str:
+def _build_user_prompt(articles: list[ScoredArticle], *, now: datetime) -> str:
     payload = {
         "articles": [
             {
@@ -274,6 +286,8 @@ def _build_user_prompt(articles: list[ScoredArticle]) -> str:
     }
 
     return (
+        f"Digest reference date: {now.date().isoformat()}.\n"
+        "Bias the digest toward clearly dated current-week developments. Undated or older items should not displace fresher news unless they are materially more important.\n"
         "Compose the morning digest using only the articles below.\n"
         "Do not invent articles, URLs, sources, or dates.\n"
         "Each article URL may appear at most once across all sections.\n"

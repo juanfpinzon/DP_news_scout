@@ -247,6 +247,14 @@ def test_run_pipeline_can_reuse_articles_from_database(tmp_path, monkeypatch) ->
                 published_at="2026-04-04T08:00:00+00:00",
                 fetched_at="2026-04-04T08:05:00+00:00",
                 content_snippet="Summary 1",
+            ),
+            ArticleRecord(
+                url="https://example.com/article-old",
+                title="Old Article",
+                source="Source A",
+                published_at="2026-03-20T08:00:00+00:00",
+                fetched_at="2026-03-20T08:05:00+00:00",
+                content_snippet="Old summary",
             )
         ],
     )

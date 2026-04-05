@@ -431,6 +431,83 @@ def test_scrape_source_extracts_recent_articles() -> None:
     assert articles[0].author == "Reporter"
 
 
+def test_scrape_source_recovers_missing_listing_dates_from_detail_pages() -> None:
+    now = datetime(2026, 3, 31, 9, 0, tzinfo=timezone.utc)
+    listing_html = dedent(
+        """
+        <html>
+          <body>
+            <main>
+              <article>
+                <h2><a href="/insights/fresh-story">Fresh Story</a></h2>
+                <p>Fresh summary.</p>
+              </article>
+              <article>
+                <h2><a href="/insights/stale-story">Stale Story</a></h2>
+                <p>Stale summary.</p>
+              </article>
+            </main>
+          </body>
+        </html>
+        """
+    ).strip()
+    fresh_detail_html = dedent(
+        """
+        <html>
+          <head>
+            <script type="application/ld+json">
+              {"datePublished": "2026-03-30T06:30:00+00:00"}
+            </script>
+          </head>
+        </html>
+        """
+    ).strip()
+    stale_detail_html = dedent(
+        """
+        <html>
+          <head>
+            <script type="application/ld+json">
+              {"datePublished": "2026-03-01T06:30:00+00:00"}
+            </script>
+          </head>
+        </html>
+        """
+    ).strip()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/insights":
+            return httpx.Response(200, text=listing_html)
+        if request.url.path == "/insights/fresh-story":
+            return httpx.Response(200, text=fresh_detail_html)
+        if request.url.path == "/insights/stale-story":
+            return httpx.Response(200, text=stale_detail_html)
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    source = Source(
+        name="Example Scrape",
+        url="https://example.com/insights",
+        tier=1,
+        method="scrape",
+        active=True,
+        category="consulting",
+        selectors={
+            "article": "article",
+            "title": "h2",
+            "link": "a[href]",
+            "summary": "p",
+        },
+    )
+
+    try:
+        articles = asyncio.run(scrape_source(source, client=client, now=now))
+    finally:
+        asyncio.run(client.aclose())
+
+    assert [article.url for article in articles] == ["https://example.com/insights/fresh-story"]
+    assert articles[0].published_at == "2026-03-30T06:30:00+00:00"
+
+
 def test_scrape_source_falls_back_to_anchor_scan_and_meta_author() -> None:
     now = datetime(2026, 3, 31, 9, 0, tzinfo=timezone.utc)
     html = dedent(

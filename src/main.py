@@ -3,11 +3,12 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from src.analyzer.digest import Digest, compose_digest
 from src.analyzer.relevance import ScoredArticle, score_articles
+from src.fetcher.common import parse_datetime
 from src.fetcher import FetchSummary, RawArticle, fetch_all_sources_report, load_source_registry
 from src.renderer import render_digest, render_plaintext
 from src.sender import send_digest
@@ -240,6 +241,8 @@ async def _run_pipeline_async(
             raw_articles = load_raw_articles_from_storage(
                 database_path=config.settings.database_path,
                 sources=sources,
+                settings=config.settings,
+                now=now,
             )
             fetch_summary = FetchSummary(
                 articles=raw_articles,
@@ -349,6 +352,7 @@ async def _run_pipeline_async(
                 settings=config.settings,
                 logger=get_logger(__name__, pipeline_stage="analyzer"),
                 progress_callback=progress_callback,
+                now=now,
             )
         except Exception as exc:
             status = "failed"
@@ -392,6 +396,7 @@ async def _run_pipeline_async(
                 settings=config.settings,
                 logger=get_logger(__name__, pipeline_stage="analyzer"),
                 progress_callback=progress_callback,
+                now=now,
             )
         except Exception as exc:
             status = "failed"
@@ -752,18 +757,33 @@ def load_raw_articles_from_storage(
     *,
     database_path: str,
     sources: list[Any],
+    settings: Any,
+    now: datetime | None = None,
 ) -> list[RawArticle]:
     stored_articles = load_articles(database_path)
     if not stored_articles:
         raise ValueError("no stored articles available in the database")
+    reference_now = now or datetime.now(timezone.utc)
+    cutoff = reference_now - timedelta(days=settings.reuse_seen_db_window_days)
     source_lookup = {
         str(source.name).strip().casefold(): source
         for source in sources
     }
-    return [
+    recent_articles = [
         _article_record_to_raw_article(record, source_lookup=source_lookup)
         for record in stored_articles
+        if _record_is_recent_enough(record, cutoff=cutoff)
     ]
+    if not recent_articles:
+        raise ValueError("no recent stored articles available in the database")
+    recent_articles.sort(
+        key=lambda article: (
+            parse_datetime(article.published_at or article.fetched_at or "") or datetime.min.replace(tzinfo=timezone.utc),
+            article.url,
+        ),
+        reverse=True,
+    )
+    return recent_articles
 
 
 def _article_record_to_raw_article(
@@ -783,6 +803,15 @@ def _article_record_to_raw_article(
         summary=record.content_snippet,
         author=None,
     )
+
+
+def _record_is_recent_enough(
+    record: ArticleRecord,
+    *,
+    cutoff: datetime,
+) -> bool:
+    reference_time = parse_datetime(record.published_at) or parse_datetime(record.fetched_at)
+    return reference_time is not None and reference_time >= cutoff
 
 
 def _report_progress(

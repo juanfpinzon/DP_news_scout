@@ -43,6 +43,8 @@ class Settings:
     max_digest_items_per_source: int = 3
     email_max_width_px: int = 880
     issue_number_override: int | None = None
+    recency_priority_window_days: int = 7
+    reuse_seen_db_window_days: int = 7
 
 
 @dataclass(slots=True)
@@ -87,6 +89,8 @@ def load_config(env_file: Path | None = None) -> AppConfig:
         "max_digest_items_per_source": 3,
         "email_max_width_px": 880,
         "issue_number_override": None,
+        "recency_priority_window_days": 7,
+        "reuse_seen_db_window_days": 7,
         **_read_yaml(CONFIG_DIR / "settings.yaml"),
     }
     sources_data = _read_yaml(CONFIG_DIR / "sources.yaml")
@@ -169,6 +173,16 @@ def load_config(env_file: Path | None = None) -> AppConfig:
             "ISSUE_NUMBER_OVERRIDE",
             settings_data,
             "issue_number_override",
+        ),
+        recency_priority_window_days=_get_int(
+            "RECENCY_PRIORITY_WINDOW_DAYS",
+            settings_data,
+            "recency_priority_window_days",
+        ),
+        reuse_seen_db_window_days=_get_int(
+            "REUSE_SEEN_DB_WINDOW_DAYS",
+            settings_data,
+            "reuse_seen_db_window_days",
         ),
     )
     _validate_settings(settings)
@@ -329,6 +343,10 @@ def _validate_settings(settings: Settings) -> None:
         raise ConfigError("email_max_width_px must be greater than 0")
     if settings.issue_number_override is not None and settings.issue_number_override < 0:
         raise ConfigError("issue_number_override must be 0 or greater")
+    if settings.recency_priority_window_days <= 0:
+        raise ConfigError("recency_priority_window_days must be greater than 0")
+    if settings.reuse_seen_db_window_days <= 0:
+        raise ConfigError("reuse_seen_db_window_days must be greater than 0")
 
 
 def _build_sources(config: dict[str, Any]) -> list[SourceConfig]:

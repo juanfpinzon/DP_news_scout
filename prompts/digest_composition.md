@@ -14,13 +14,17 @@ one provided article URL, and each URL may appear only once across the entire di
 - Connect every item back to Digital Procurement transformation priorities
 - Prefer strategic implications, vendor/platform shifts, operating model lessons,
   competitive intelligence, and procurement technology implications
+- Prefer the freshest clearly dated developments, with a strong bias toward the
+  current week
 
 ## Section Guidance
 
 - `top_story`: exactly 1 item
-  Choose the single most strategically important article for the audience.
+  Choose the single most strategically important article for the audience, with a
+  strong preference for a clearly dated current-week development.
 - `key_developments`: usually 3-5 items
   Use for major procurement, AI, platform, vendor, market, or peer-CPG developments.
+  Prioritize current-week announcements, launches, releases, and partnerships.
 - `on_our_radar`: usually 2-4 items
   Use for emerging themes, early signals, vendor moves, or watch-list items.
 - `quick_hits`: usually 3-5 items
@@ -49,6 +53,8 @@ rather than inventing content.
 - Preserve URLs exactly as provided
 - Do not repeat the same URL in multiple sections
 - Keep every `source` and `date` value as a JSON string literal
+- Do not elevate older or undated items above clearly newer current-week news
+  unless the older item is materially more important
 
 Return this shape exactly:
 

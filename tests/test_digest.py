@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 
 import pytest
 
@@ -665,16 +666,22 @@ def test_select_articles_balances_sources_before_filling_limit() -> None:
     articles[4].source = articles[5].source = "Source B"
     articles[6].source = "Source C"
 
-    selected = _select_articles(articles, limit=5, max_per_source=2)
+    selected = _select_articles(
+        articles,
+        limit=5,
+        max_per_source=2,
+        now=datetime(2026, 4, 7, 8, 0, tzinfo=timezone.utc),
+        current_week_days=7,
+    )
 
     counts: dict[str, int] = {}
     for article in selected:
         counts[article.source] = counts.get(article.source, 0) + 1
 
     assert [article.url for article in selected[:3]] == [
-        "https://example.com/article-1",
-        "https://example.com/article-5",
         "https://example.com/article-7",
+        "https://example.com/article-5",
+        "https://example.com/article-1",
     ]
     assert counts == {"Source A": 2, "Source B": 2, "Source C": 1}
 
@@ -691,7 +698,13 @@ def test_select_articles_can_fill_past_source_cap_when_needed() -> None:
         article.source = "Source A"
     articles[4].source = "Source B"
 
-    selected = _select_articles(articles, limit=4, max_per_source=1)
+    selected = _select_articles(
+        articles,
+        limit=4,
+        max_per_source=1,
+        now=datetime(2026, 4, 7, 8, 0, tzinfo=timezone.utc),
+        current_week_days=7,
+    )
 
     counts: dict[str, int] = {}
     for article in selected:
@@ -699,6 +712,29 @@ def test_select_articles_can_fill_past_source_cap_when_needed() -> None:
 
     assert len(selected) == 4
     assert counts == {"Source A": 3, "Source B": 1}
+
+
+def test_select_articles_prioritizes_current_week_items_over_older_ones() -> None:
+    fresh_article = build_article(1, 8)
+    fresh_article.source = "Fresh Source"
+    fresh_article.published_at = "2026-04-06T08:00:00+00:00"
+
+    older_article = build_article(2, 10)
+    older_article.source = "Older Source"
+    older_article.published_at = "2026-03-20T08:00:00+00:00"
+
+    selected = _select_articles(
+        [older_article, fresh_article],
+        limit=2,
+        max_per_source=1,
+        now=datetime(2026, 4, 7, 8, 0, tzinfo=timezone.utc),
+        current_week_days=7,
+    )
+
+    assert [article.url for article in selected] == [
+        "https://example.com/article-1",
+        "https://example.com/article-2",
+    ]
 
 
 def test_compose_digest_uses_digest_model_when_instantiating_client(
