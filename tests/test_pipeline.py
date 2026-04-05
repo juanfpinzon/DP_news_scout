@@ -15,7 +15,7 @@ from src.fetcher.models import RawArticle, Source
 from src.main import run_pipeline
 from src.renderer.html_email import render_digest as render_html_digest
 from src.renderer.plaintext import render_plaintext as render_digest_plaintext
-from src.storage.db import get_recent_urls
+from src.storage.db import ArticleRecord, get_recent_urls, save_articles
 from src.utils.config import (
     DEFAULT_ENV_FILE,
     AppConfig,
@@ -147,6 +147,94 @@ def test_run_pipeline_uses_issue_number_override_when_configured(tmp_path, monke
     assert result.run_id == 1
     assert result.issue_number == 0
     assert sent["subject"] == "Digital Procurement News Scout | April 4, 2026 | Issue #0"
+
+
+def test_run_pipeline_passes_ignore_seen_db_to_fetcher(tmp_path, monkeypatch) -> None:
+    config = _build_config(tmp_path=tmp_path, dry_run=False)
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr("src.main.load_source_registry", lambda: [_make_source("Source A")])
+
+    async def fake_fetch_all_sources_report(**kwargs):
+        captured.update(kwargs)
+        return _make_fetch_summary(
+            articles=[_make_raw_article(1, source="Source A")],
+            sources_attempted=1,
+            sources_succeeded=1,
+            sources_failed=0,
+            articles_found=1,
+        )
+
+    async def fake_score_articles(*_args, **_kwargs):
+        return [_make_scored_article(1, source="Source A")]
+
+    async def fake_compose_digest(*_args, **_kwargs):
+        return _make_digest()
+
+    monkeypatch.setattr("src.main.fetch_all_sources_report", fake_fetch_all_sources_report)
+    monkeypatch.setattr("src.main.score_articles", fake_score_articles)
+    monkeypatch.setattr("src.main.compose_digest", fake_compose_digest)
+    monkeypatch.setattr("src.main.render_digest", lambda *_args, **_kwargs: "<html>digest</html>")
+    monkeypatch.setattr("src.main.render_plaintext", lambda *_args, **_kwargs: "digest")
+    monkeypatch.setattr("src.main.send_digest", lambda *_args, **_kwargs: True)
+
+    result = run_pipeline(
+        config=config,
+        now=datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
+        ignore_seen_db=True,
+    )
+
+    assert result.status == "success"
+    assert captured["use_database_seen_urls"] is False
+
+
+def test_run_pipeline_can_reuse_articles_from_database(tmp_path, monkeypatch) -> None:
+    config = _build_config(tmp_path=tmp_path, dry_run=False)
+    captured: dict[str, object] = {}
+
+    save_articles(
+        config.settings.database_path,
+        [
+            ArticleRecord(
+                url="https://example.com/article-1",
+                title="Article 1",
+                source="Source A",
+                published_at="2026-04-04T08:00:00+00:00",
+                fetched_at="2026-04-04T08:05:00+00:00",
+                content_snippet="Summary 1",
+            )
+        ],
+    )
+
+    monkeypatch.setattr("src.main.load_source_registry", lambda: [_make_source("Source A")])
+    monkeypatch.setattr(
+        "src.main.fetch_all_sources_report",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("fetch_all_sources_report should not be called")),
+    )
+
+    async def fake_score_articles(raw_articles, **_kwargs):
+        captured["raw_articles"] = raw_articles
+        return [_make_scored_article(1, source="Source A")]
+
+    async def fake_compose_digest(*_args, **_kwargs):
+        return _make_digest()
+
+    monkeypatch.setattr("src.main.score_articles", fake_score_articles)
+    monkeypatch.setattr("src.main.compose_digest", fake_compose_digest)
+    monkeypatch.setattr("src.main.render_digest", lambda *_args, **_kwargs: "<html>digest</html>")
+    monkeypatch.setattr("src.main.render_plaintext", lambda *_args, **_kwargs: "digest")
+    monkeypatch.setattr("src.main.send_digest", lambda *_args, **_kwargs: True)
+
+    result = run_pipeline(
+        config=config,
+        now=datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
+        reuse_seen_db=True,
+    )
+
+    assert result.status == "success"
+    assert len(captured["raw_articles"]) == 1
+    assert captured["raw_articles"][0].url == "https://example.com/article-1"
+    assert captured["raw_articles"][0].summary == "Summary 1"
 
 
 def test_run_pipeline_dry_run_skips_send(tmp_path, monkeypatch) -> None:

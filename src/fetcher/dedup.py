@@ -60,9 +60,10 @@ def deduplicate_articles(
     *,
     database_path: str | None = None,
     dedup_window_days: int = 7,
+    use_database_seen_urls: bool = True,
 ) -> list[RawArticle]:
     seen_urls: set[str] = set()
-    if database_path is not None:
+    if database_path is not None and use_database_seen_urls:
         seen_urls.update(load_recent_seen_urls(database_path, days=dedup_window_days))
     if recent_urls is not None:
         seen_urls.update(normalize_url(url) for url in recent_urls)

@@ -10,7 +10,15 @@ from src.analyzer.relevance import ScoredArticle, score_articles
 from src.fetcher import FetchSummary, RawArticle, fetch_all_sources_report, load_source_registry
 from src.renderer import render_digest, render_plaintext
 from src.sender import send_digest
-from src.storage.db import PipelineRunRecord, initialize_database, log_run, save_articles, utc_now_iso
+from src.storage.db import (
+    ArticleRecord,
+    PipelineRunRecord,
+    initialize_database,
+    load_articles,
+    log_run,
+    save_articles,
+    utc_now_iso,
+)
 from src.utils.config import AppConfig, load_config
 from src.utils.logging import configure_logging, get_logger
 
@@ -38,7 +46,10 @@ def run_pipeline(
     *,
     config: AppConfig | None = None,
     now: datetime | None = None,
+    ignore_seen_db: bool = False,
+    reuse_seen_db: bool = False,
 ) -> PipelineResult:
+    _validate_fetch_mode(ignore_seen_db=ignore_seen_db, reuse_seen_db=reuse_seen_db)
     config = config or load_config()
     initialize_database(config.settings.database_path)
     logger = get_logger(__name__, pipeline_stage="pipeline")
@@ -97,6 +108,8 @@ def run_pipeline(
         recipient_group=config.default_recipient_group,
         recipient_count=len(config.recipients),
         dry_run=config.settings.dry_run,
+        ignore_seen_db=ignore_seen_db,
+        reuse_seen_db=reuse_seen_db,
         timeout_seconds=config.settings.pipeline_timeout,
     )
 
@@ -111,6 +124,8 @@ def run_pipeline(
                     sources=sources,
                     logger=logger,
                     now=now,
+                    ignore_seen_db=ignore_seen_db,
+                    reuse_seen_db=reuse_seen_db,
                 ),
                 timeout=config.settings.pipeline_timeout,
             )
@@ -182,6 +197,8 @@ async def _run_pipeline_async(
     sources: list[Any],
     logger: Any,
     now: datetime | None,
+    ignore_seen_db: bool,
+    reuse_seen_db: bool,
 ) -> PipelineResult:
     date_label = _format_display_date(now)
     subject = _build_digest_subject(issue_number=issue_number, date_label=date_label)
@@ -203,23 +220,46 @@ async def _run_pipeline_async(
     status = "success"
 
     try:
-        fetch_summary = await fetch_all_sources_report(
-            sources=sources,
-            settings=config.settings,
-            database_path=config.settings.database_path,
-            logger=get_logger(__name__, pipeline_stage="fetcher"),
-            now=now,
-            persist_to_db=False,
-        )
-        raw_articles = fetch_summary.articles
+        if reuse_seen_db:
+            raw_articles = load_raw_articles_from_storage(
+                database_path=config.settings.database_path,
+                sources=sources,
+            )
+            fetch_summary = FetchSummary(
+                articles=raw_articles,
+                sources_attempted=len(sources),
+                sources_succeeded=0,
+                sources_failed=0,
+                articles_found=len(raw_articles),
+                articles_deduplicated=len(raw_articles),
+                articles_saved=0,
+            )
+            logger.info(
+                "pipeline_reusing_stored_articles",
+                run_id=run_id,
+                issue_number=issue_number,
+                article_count=len(raw_articles),
+            )
+        else:
+            fetch_summary = await fetch_all_sources_report(
+                sources=sources,
+                settings=config.settings,
+                database_path=config.settings.database_path,
+                logger=get_logger(__name__, pipeline_stage="fetcher"),
+                now=now,
+                persist_to_db=False,
+                use_database_seen_urls=not ignore_seen_db,
+            )
+            raw_articles = fetch_summary.articles
     except Exception as exc:
         status = "failed"
-        error = f"fetcher stage failed: {exc}"
+        stage_name = "stored_article_reuse" if reuse_seen_db else "fetcher"
+        error = f"{stage_name} stage failed: {exc}"
         _log_pipeline_stage_failure(
             logger=logger,
             run_id=run_id,
             issue_number=issue_number,
-            stage="fetcher",
+            stage=stage_name,
             error=error,
             exc=exc,
         )
@@ -240,7 +280,7 @@ async def _run_pipeline_async(
             logger=logger,
         )
 
-    if fetch_summary.total_fetch_outage:
+    if not reuse_seen_db and fetch_summary.total_fetch_outage:
         status = "failed"
         error = "fetcher stage failed: all configured sources failed to fetch"
         _log_pipeline_stage_failure(
@@ -634,6 +674,48 @@ def resolve_issue_number(settings: Any, *, fallback: int) -> int:
     if override is not None:
         return int(override)
     return fallback
+
+
+def _validate_fetch_mode(*, ignore_seen_db: bool, reuse_seen_db: bool) -> None:
+    if ignore_seen_db and reuse_seen_db:
+        raise ValueError("ignore_seen_db and reuse_seen_db cannot both be enabled")
+
+
+def load_raw_articles_from_storage(
+    *,
+    database_path: str,
+    sources: list[Any],
+) -> list[RawArticle]:
+    stored_articles = load_articles(database_path)
+    if not stored_articles:
+        raise ValueError("no stored articles available in the database")
+    source_lookup = {
+        str(source.name).strip().casefold(): source
+        for source in sources
+    }
+    return [
+        _article_record_to_raw_article(record, source_lookup=source_lookup)
+        for record in stored_articles
+    ]
+
+
+def _article_record_to_raw_article(
+    record: ArticleRecord,
+    *,
+    source_lookup: dict[str, Any],
+) -> RawArticle:
+    source = source_lookup.get(record.source.strip().casefold())
+    return RawArticle(
+        url=record.url,
+        title=record.title,
+        source=record.source,
+        source_url=source.url if source is not None else "",
+        category=source.category if source is not None else "procurement",
+        published_at=record.published_at,
+        fetched_at=record.fetched_at or utc_now_iso(),
+        summary=record.content_snippet,
+        author=None,
+    )
 
 
 def main() -> None:

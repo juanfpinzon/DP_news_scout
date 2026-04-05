@@ -97,6 +97,8 @@ class LLMClient:
         system_prompt: str,
         user_prompt: str,
         max_tokens: int,
+        response_format: dict[str, Any] | None = None,
+        extra_body: dict[str, Any] | None = None,
     ) -> str:
         if not system_prompt.strip():
             raise ValueError("system_prompt must not be empty")
@@ -114,13 +116,21 @@ class LLMClient:
         for attempt in range(1, self.max_attempts + 1):
             started_at = time.monotonic()
             try:
-                response = await self.client.chat.completions.create(
-                    model=active_model,
-                    messages=[
+                request_kwargs: dict[str, Any] = {
+                    "model": active_model,
+                    "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
                     ],
-                    max_tokens=max_tokens,
+                    "max_tokens": max_tokens,
+                }
+                if response_format is not None:
+                    request_kwargs["response_format"] = response_format
+                if extra_body is not None:
+                    request_kwargs["extra_body"] = extra_body
+
+                response = await self.client.chat.completions.create(
+                    **request_kwargs,
                 )
                 content = _extract_text(response)
                 usage = _extract_usage_metrics(response)

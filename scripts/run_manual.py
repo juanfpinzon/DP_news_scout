@@ -14,11 +14,17 @@ from dotenv import load_dotenv
 from src.analyzer.digest import compose_digest
 from src.analyzer.llm_client import LLMClient
 from src.analyzer.relevance import score_articles
-from src.fetcher import fetch_all_sources_report, load_source_registry
-from src.main import DEFAULT_SUBJECT_PREFIX, PipelineResult, resolve_issue_number, run_pipeline
+from src.fetcher import FetchSummary, fetch_all_sources_report, load_source_registry
+from src.main import (
+    DEFAULT_SUBJECT_PREFIX,
+    PipelineResult,
+    load_raw_articles_from_storage,
+    resolve_issue_number,
+    run_pipeline,
+)
 from src.renderer import render_digest, render_plaintext
 from src.sender import send_digest
-from src.storage.db import initialize_database
+from src.storage.db import initialize_database, save_articles
 from src.utils.config import DEFAULT_ENV_FILE, AppConfig, RecipientConfig, load_config
 from src.utils.logging import configure_logging, get_logger
 
@@ -72,6 +78,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Fetch sources only and report article counts without LLM analysis or email.",
     )
+    parser.add_argument(
+        "--ignore-seen-db",
+        action="store_true",
+        help="Fetch live sources while ignoring the current seen-URL dedup state in the database.",
+    )
+    parser.add_argument(
+        "--reuse-seen-db",
+        action="store_true",
+        help="Skip fetching and reuse the articles currently stored in the database.",
+    )
     return parser.parse_args(argv)
 
 
@@ -85,7 +101,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         if args.sources_only:
-            return _run_sources_only(config=config, now=_current_time())
+            return _run_sources_only(
+                config=config,
+                now=_current_time(),
+                ignore_seen_db=args.ignore_seen_db,
+            )
         if args.preview or args.test_email:
             return _run_render_mode(
                 config=config,
@@ -98,9 +118,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 ),
                 test_recipient=args.test_email,
                 now=_current_time(),
+                ignore_seen_db=args.ignore_seen_db,
+                reuse_seen_db=args.reuse_seen_db,
             )
 
-        result = run_pipeline(config=config, now=_current_time())
+        result = run_pipeline(
+            config=config,
+            now=_current_time(),
+            ignore_seen_db=args.ignore_seen_db,
+            reuse_seen_db=args.reuse_seen_db,
+        )
     except Exception as exc:
         print(f"Manual run failed: {exc}")
         return 1
@@ -116,6 +143,10 @@ def _validate_args(args: argparse.Namespace) -> None:
         )
     if args.dry_run and (args.preview or args.test_email):
         raise SystemExit("--dry-run cannot be combined with --preview or --test-email")
+    if args.ignore_seen_db and args.reuse_seen_db:
+        raise SystemExit("--ignore-seen-db cannot be combined with --reuse-seen-db")
+    if args.sources_only and args.reuse_seen_db:
+        raise SystemExit("--sources-only cannot be combined with --reuse-seen-db")
 
 
 def _uses_pipeline_mode(args: argparse.Namespace) -> bool:
@@ -133,7 +164,7 @@ def _load_runtime_config(*, dry_run_override: bool | None) -> AppConfig:
     )
 
 
-def _run_sources_only(*, config: AppConfig, now: datetime) -> int:
+def _run_sources_only(*, config: AppConfig, now: datetime, ignore_seen_db: bool) -> int:
     logger = get_logger(__name__, pipeline_stage="manual")
     sources = load_source_registry()
     fetch_summary = asyncio.run(
@@ -144,6 +175,7 @@ def _run_sources_only(*, config: AppConfig, now: datetime) -> int:
             logger=get_logger(__name__, pipeline_stage="fetcher"),
             now=now,
             persist_to_db=False,
+            use_database_seen_urls=not ignore_seen_db,
         )
     )
     raw_articles = fetch_summary.articles
@@ -173,8 +205,18 @@ def _run_render_mode(
     plaintext_path: Path | None,
     test_recipient: str | None,
     now: datetime,
+    ignore_seen_db: bool,
+    reuse_seen_db: bool,
 ) -> int:
-    rendered = asyncio.run(_render_live_digest(config=config, now=now))
+    rendered = asyncio.run(
+        _render_live_digest(
+            config=config,
+            now=now,
+            ignore_seen_db=ignore_seen_db,
+            reuse_seen_db=reuse_seen_db,
+            persist_articles=ignore_seen_db or reuse_seen_db,
+        )
+    )
 
     print(
         f"Rendered digest for issue #{rendered.issue_number}: "
@@ -211,6 +253,9 @@ async def _render_live_digest(
     *,
     config: AppConfig,
     now: datetime,
+    ignore_seen_db: bool = False,
+    reuse_seen_db: bool = False,
+    persist_articles: bool = False,
 ) -> RenderedDigestResult:
     initialize_database(config.settings.database_path)
     date_label = _format_display_date(now)
@@ -220,15 +265,31 @@ async def _render_live_digest(
     )
     sources = load_source_registry()
 
-    fetch_summary = await fetch_all_sources_report(
-        sources=sources,
-        settings=config.settings,
-        database_path=config.settings.database_path,
-        logger=get_logger(__name__, pipeline_stage="fetcher"),
-        now=now,
-        persist_to_db=False,
-    )
-    raw_articles = fetch_summary.articles
+    if reuse_seen_db:
+        raw_articles = load_raw_articles_from_storage(
+            database_path=config.settings.database_path,
+            sources=sources,
+        )
+        fetch_summary = FetchSummary(
+            articles=raw_articles,
+            sources_attempted=len(sources),
+            sources_succeeded=0,
+            sources_failed=0,
+            articles_found=len(raw_articles),
+            articles_deduplicated=len(raw_articles),
+            articles_saved=0,
+        )
+    else:
+        fetch_summary = await fetch_all_sources_report(
+            sources=sources,
+            settings=config.settings,
+            database_path=config.settings.database_path,
+            logger=get_logger(__name__, pipeline_stage="fetcher"),
+            now=now,
+            persist_to_db=False,
+            use_database_seen_urls=not ignore_seen_db,
+        )
+        raw_articles = fetch_summary.articles
     if fetch_summary.total_fetch_outage:
         raise RuntimeError("all configured sources failed to fetch")
     if not raw_articles:
@@ -255,6 +316,13 @@ async def _render_live_digest(
         )
 
         if not scored_articles:
+            if persist_articles:
+                _persist_manual_articles(
+                    database_path=config.settings.database_path,
+                    raw_articles=raw_articles,
+                    scored_articles=[],
+                    digest=None,
+                )
             subject = _build_no_news_subject(issue_number=issue_number, date_label=date_label)
             html, plaintext = _build_no_news_email(issue_number=issue_number, date_label=date_label)
             return RenderedDigestResult(
@@ -274,6 +342,14 @@ async def _render_live_digest(
             llm_client=llm_client,
             settings=config.settings,
             logger=get_logger(__name__, pipeline_stage="analyzer"),
+        )
+
+    if persist_articles:
+        _persist_manual_articles(
+            database_path=config.settings.database_path,
+            raw_articles=raw_articles,
+            scored_articles=scored_articles,
+            digest=digest,
         )
 
     html = render_digest(
@@ -305,6 +381,37 @@ def _build_test_email_config(config: AppConfig, *, recipient: str) -> AppConfig:
         recipient_groups={MANUAL_TEST_GROUP: recipients},
         default_recipient_group=MANUAL_TEST_GROUP,
     )
+
+
+def _persist_manual_articles(
+    *,
+    database_path: str,
+    raw_articles,
+    scored_articles,
+    digest,
+) -> None:
+    scored_by_url = {article.url: article for article in scored_articles}
+    included_urls = _collect_included_urls(digest) if digest is not None else set()
+    records = []
+
+    for article in raw_articles:
+        record = article.to_record()
+        scored = scored_by_url.get(article.url)
+        if scored is not None:
+            record.relevance_score = float(scored.relevance_score)
+        record.included_in_digest = article.url in included_urls
+        records.append(record)
+
+    save_articles(database_path, records)
+
+
+def _collect_included_urls(digest) -> set[str]:
+    return {
+        digest.top_story.url,
+        *(item.url for item in digest.key_developments),
+        *(item.url for item in digest.on_our_radar),
+        *(item.url for item in digest.quick_hits),
+    }
 
 
 def _save_preview(content: str, destination: Path) -> Path:

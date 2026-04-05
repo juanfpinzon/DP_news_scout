@@ -207,6 +207,38 @@ def test_deduplicate_articles_uses_recent_urls_from_database(tmp_path) -> None:
     assert [article.url for article in deduplicated] == ["https://example.com/stale-story"]
 
 
+def test_deduplicate_articles_can_ignore_recent_urls_from_database(tmp_path) -> None:
+    database_path = str(tmp_path / "dpns.db")
+    current_time = datetime.now(timezone.utc)
+    save_articles(
+        database_path,
+        [
+            {
+                "url": "https://www.example.com/recent-story/?utm_source=rss",
+                "title": "Recent Story",
+                "source": "Example",
+                "fetched_at": (current_time - timedelta(days=1)).isoformat(),
+            },
+        ],
+    )
+
+    deduplicated = deduplicate_articles(
+        [
+            RawArticle(
+                url="https://example.com/recent-story",
+                title="Recent Duplicate",
+                source="Example",
+                source_url="https://example.com/feed.xml",
+                category="trade_media",
+            ),
+        ],
+        database_path=database_path,
+        use_database_seen_urls=False,
+    )
+
+    assert [article.url for article in deduplicated] == ["https://example.com/recent-story"]
+
+
 def test_fetch_rss_filters_old_items_and_cleans_summary() -> None:
     now = datetime(2026, 3, 31, 9, 0, tzinfo=timezone.utc)
     rss_body = dedent(

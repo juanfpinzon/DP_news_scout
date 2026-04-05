@@ -207,6 +207,31 @@ def test_llm_client_logs_token_usage_and_generation_cost() -> None:
     assert success_log["fallback_used"] is False
 
 
+def test_llm_client_forwards_structured_output_options() -> None:
+    async def run() -> FakeOpenAIClient:
+        openai_client = FakeOpenAIClient([build_chat_response(content="Digest body")])
+        client = LLMClient(
+            settings=build_settings(),
+            api_key="test-key",
+            client=openai_client,
+            metadata_client=FakeMetadataClient(),
+            logger=DummyLogger(),
+        )
+        await client.complete(
+            system_prompt="System prompt",
+            user_prompt="User prompt",
+            max_tokens=300,
+            response_format={"type": "json_object"},
+            extra_body={"plugins": [{"id": "response-healing"}]},
+        )
+        return openai_client
+
+    openai_client = asyncio.run(run())
+
+    assert openai_client.calls[0]["response_format"] == {"type": "json_object"}
+    assert openai_client.calls[0]["extra_body"] == {"plugins": [{"id": "response-healing"}]}
+
+
 def test_llm_client_configures_sdk_timeout_and_disables_internal_retries(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

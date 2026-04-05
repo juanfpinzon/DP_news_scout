@@ -135,6 +135,40 @@ def get_recent_urls(database_path: str, days: int = 2) -> set[str]:
     return {row[0] for row in rows}
 
 
+def load_articles(database_path: str) -> list[ArticleRecord]:
+    initialize_database(database_path)
+    with _connect_database(database_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT
+                url,
+                title,
+                source,
+                published_at,
+                fetched_at,
+                content_snippet,
+                relevance_score,
+                included_in_digest
+            FROM articles
+            ORDER BY COALESCE(fetched_at, published_at, '') DESC, id DESC
+            """
+        ).fetchall()
+
+    return [
+        ArticleRecord(
+            url=row[0],
+            title=row[1],
+            source=row[2],
+            published_at=row[3],
+            fetched_at=row[4],
+            content_snippet=row[5],
+            relevance_score=row[6],
+            included_in_digest=bool(row[7]),
+        )
+        for row in rows
+    ]
+
+
 def log_run(
     database_path: str,
     run: PipelineRunRecord | dict[str, Any],

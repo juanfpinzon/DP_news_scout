@@ -41,9 +41,11 @@ def test_main_dry_run_overrides_pipeline_config(
         lambda: datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
     )
 
-    def fake_run_pipeline(*, config, now):
+    def fake_run_pipeline(*, config, now, ignore_seen_db, reuse_seen_db):
         captured["config"] = config
         captured["now"] = now
+        captured["ignore_seen_db"] = ignore_seen_db
+        captured["reuse_seen_db"] = reuse_seen_db
         return PipelineResult(
             run_id=1,
             issue_number=1,
@@ -68,6 +70,47 @@ def test_main_dry_run_overrides_pipeline_config(
 
     captured_output = capsys.readouterr()
     assert "Dry-run completed" in captured_output.out
+
+
+def test_main_passes_testing_fetch_flags_to_run_pipeline(
+    monkeypatch: pytest.MonkeyPatch,
+    run_manual_module,
+) -> None:
+    config = _build_config(dry_run=False)
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(run_manual_module, "load_config", lambda: config)
+    monkeypatch.setattr(run_manual_module, "configure_logging", lambda _config: None)
+    monkeypatch.setattr(
+        run_manual_module,
+        "_current_time",
+        lambda: datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
+    )
+
+    def fake_run_pipeline(*, config, now, ignore_seen_db, reuse_seen_db):
+        captured["ignore_seen_db"] = ignore_seen_db
+        captured["reuse_seen_db"] = reuse_seen_db
+        return PipelineResult(
+            run_id=1,
+            issue_number=0,
+            status="success",
+            started_at="2026-04-04T08:00:00+00:00",
+            completed_at="2026-04-04T08:01:00+00:00",
+            sources_fetched=1,
+            articles_found=1,
+            relevant_articles=1,
+            articles_included=1,
+            email_sent=True,
+            subject="Subject",
+            dry_run=False,
+        )
+
+    monkeypatch.setattr(run_manual_module, "run_pipeline", fake_run_pipeline)
+
+    exit_code = run_manual_module.main(["--ignore-seen-db"])
+
+    assert exit_code == 0
+    assert captured == {"ignore_seen_db": True, "reuse_seen_db": False}
 
 
 def test_main_sources_only_reports_fetch_counts(

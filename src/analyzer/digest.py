@@ -13,7 +13,9 @@ from src.utils.config import AppConfig, Settings, load_config
 from src.utils.logging import get_logger
 
 DEFAULT_MAX_TOKENS = 2600
-MAX_JSON_ATTEMPTS = 2
+MAX_JSON_ATTEMPTS = 3
+COMPOSITION_RESPONSE_FORMAT = {"type": "json_object"}
+COMPOSITION_EXTRA_BODY = {"plugins": [{"id": "response-healing"}]}
 PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 
 
@@ -93,24 +95,27 @@ async def compose_digest(
                     system_prompt=system_prompt,
                     user_prompt=prompt_to_send,
                     max_tokens=max_tokens,
+                    response_format=COMPOSITION_RESPONSE_FORMAT,
+                    extra_body=COMPOSITION_EXTRA_BODY,
                 )
                 try:
                     digest = _parse_digest_payload(response_text, selected_articles)
                     break
                 except DigestCompositionError as exc:
-                    if attempt >= MAX_JSON_ATTEMPTS or not _is_invalid_json_error(exc):
+                    if attempt >= MAX_JSON_ATTEMPTS:
                         raise
 
                     logger.warning(
-                        "digest_composition_retrying_invalid_json",
+                        "digest_composition_retrying_invalid_payload",
                         attempt=attempt,
                         max_attempts=MAX_JSON_ATTEMPTS,
                         selected_articles=len(selected_articles),
                         error=str(exc),
                     )
                     prompt_to_send = _build_json_repair_prompt(
-                        original_prompt=user_prompt,
+                        articles=selected_articles,
                         invalid_response=response_text,
+                        error=str(exc),
                     )
         except Exception as exc:
             logger.error(
@@ -431,17 +436,72 @@ def _unwrap_json_block(text: str) -> str:
     return stripped
 
 
-def _is_invalid_json_error(error: DigestCompositionError) -> bool:
-    return isinstance(error.__cause__, json.JSONDecodeError)
-
-
-def _build_json_repair_prompt(*, original_prompt: str, invalid_response: str) -> str:
+def _build_json_repair_prompt(
+    *,
+    articles: list[ScoredArticle],
+    invalid_response: str,
+    error: str,
+) -> str:
+    allowed_articles = {
+        "articles": [
+            {
+                "url": article.url,
+                "source": article.source,
+                "date": article.published_at or "",
+            }
+            for article in articles
+        ]
+    }
+    required_shape = {
+        "top_story": {
+            "url": "https://example.com/top-story",
+            "headline": "Executive headline",
+            "summary": "Two to three sentence summary.",
+            "why_it_matters": "One to two sentence implication.",
+            "source": "Example Source",
+            "date": "2026-04-04",
+        },
+        "key_developments": [
+            {
+                "url": "https://example.com/key-development",
+                "headline": "Executive headline",
+                "summary": "Two to three sentence summary.",
+                "why_it_matters": "One to two sentence implication.",
+                "source": "Example Source",
+                "date": "2026-04-04",
+            }
+        ],
+        "on_our_radar": [
+            {
+                "url": "https://example.com/radar-item",
+                "headline": "Executive headline",
+                "summary": "Two to three sentence summary.",
+                "why_it_matters": "One to two sentence implication.",
+                "source": "Example Source",
+                "date": "",
+            }
+        ],
+        "quick_hits": [
+            {
+                "url": "https://example.com/quick-hit",
+                "one_liner": "Single-sentence takeaway.",
+                "source": "Example Source",
+            }
+        ],
+    }
     return (
-        f"{original_prompt}\n\n"
-        "Your previous response was invalid JSON.\n"
-        "Return exactly one valid JSON object that matches the required schema.\n"
-        "Do not include markdown fences, commentary, or any text before or after the JSON.\n\n"
-        "Previous invalid response:\n"
+        "Repair the malformed digest output below.\n"
+        "Return exactly one valid JSON object and nothing else.\n"
+        "Use only the allowed article URLs and source names listed below.\n"
+        "Each URL may appear at most once across all sections.\n"
+        "Use an empty string for missing dates.\n\n"
+        "Required JSON shape:\n"
+        f"{json.dumps(required_shape, ensure_ascii=True, indent=2)}\n\n"
+        "Allowed articles:\n"
+        f"{json.dumps(allowed_articles, ensure_ascii=True, indent=2)}\n\n"
+        "Validation error to fix:\n"
+        f"{error}\n\n"
+        "Malformed output to repair:\n"
         f"{invalid_response}"
     )
 

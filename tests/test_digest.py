@@ -26,12 +26,21 @@ class FakeLLMClient:
         self.calls: list[dict[str, object]] = []
         self.closed = False
 
-    async def complete(self, system_prompt: str, user_prompt: str, max_tokens: int) -> str:
+    async def complete(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int,
+        response_format: dict[str, object] | None = None,
+        extra_body: dict[str, object] | None = None,
+    ) -> str:
         self.calls.append(
             {
                 "system_prompt": system_prompt,
                 "user_prompt": user_prompt,
                 "max_tokens": max_tokens,
+                "response_format": response_format,
+                "extra_body": extra_body,
             }
         )
         return self.responses.pop(0)
@@ -145,6 +154,8 @@ def test_compose_digest_parses_valid_payload() -> None:
     assert digest.on_our_radar[0].date == ""
     assert digest.quick_hits[0].one_liner == "Quick takeaway."
     assert llm_client.calls[0]["max_tokens"] == 2600
+    assert llm_client.calls[0]["response_format"] == {"type": "json_object"}
+    assert llm_client.calls[0]["extra_body"] == {"plugins": [{"id": "response-healing"}]}
     assert "PepsiCo" in str(llm_client.calls[0]["system_prompt"])
     assert "trusted advisor's morning brief" in str(llm_client.calls[0]["system_prompt"])
     assert "relevance_reasoning" in str(llm_client.calls[0]["user_prompt"])
@@ -175,7 +186,49 @@ def test_compose_digest_rejects_duplicate_urls_across_sections() -> None:
                 }
               ]
             }
+            """,
             """
+            {
+              "top_story": {
+                "url": "https://example.com/article-1",
+                "headline": "Top headline",
+                "summary": "Top summary.",
+                "why_it_matters": "Top implication.",
+                "source": "Source 1",
+                "date": "2026-04-01"
+              },
+              "key_developments": [],
+              "on_our_radar": [],
+              "quick_hits": [
+                {
+                  "url": "https://example.com/article-1",
+                  "one_liner": "Repeated item.",
+                  "source": "Source 1"
+                }
+              ]
+            }
+            """,
+            """
+            {
+              "top_story": {
+                "url": "https://example.com/article-1",
+                "headline": "Top headline",
+                "summary": "Top summary.",
+                "why_it_matters": "Top implication.",
+                "source": "Source 1",
+                "date": "2026-04-01"
+              },
+              "key_developments": [],
+              "on_our_radar": [],
+              "quick_hits": [
+                {
+                  "url": "https://example.com/article-1",
+                  "one_liner": "Repeated item.",
+                  "source": "Source 1"
+                }
+              ]
+            }
+            """,
         ]
     )
 
@@ -208,7 +261,37 @@ def test_compose_digest_rejects_unknown_article_urls() -> None:
               "on_our_radar": [],
               "quick_hits": []
             }
+            """,
             """
+            {
+              "top_story": {
+                "url": "https://example.com/article-999",
+                "headline": "Top headline",
+                "summary": "Top summary.",
+                "why_it_matters": "Top implication.",
+                "source": "Source 999",
+                "date": "2026-04-01"
+              },
+              "key_developments": [],
+              "on_our_radar": [],
+              "quick_hits": []
+            }
+            """,
+            """
+            {
+              "top_story": {
+                "url": "https://example.com/article-999",
+                "headline": "Top headline",
+                "summary": "Top summary.",
+                "why_it_matters": "Top implication.",
+                "source": "Source 999",
+                "date": "2026-04-01"
+              },
+              "key_developments": [],
+              "on_our_radar": [],
+              "quick_hits": []
+            }
+            """,
         ]
     )
 
@@ -362,8 +445,9 @@ def test_compose_digest_retries_after_invalid_json_response() -> None:
 
     assert digest.top_story.url == "https://example.com/article-1"
     assert len(llm_client.calls) == 2
-    assert "Previous invalid response" in str(llm_client.calls[1]["user_prompt"])
-    assert any(event == "digest_composition_retrying_invalid_json" for event, _payload in logger.records)
+    assert "Malformed output to repair" in str(llm_client.calls[1]["user_prompt"])
+    assert "Allowed articles" in str(llm_client.calls[1]["user_prompt"])
+    assert any(event == "digest_composition_retrying_invalid_payload" for event, _payload in logger.records)
 
 
 def test_select_articles_balances_sources_before_filling_limit() -> None:

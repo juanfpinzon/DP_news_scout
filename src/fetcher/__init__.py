@@ -44,6 +44,7 @@ async def fetch_all_sources(
     client: httpx.AsyncClient | None = None,
     now: datetime | None = None,
     persist_to_db: bool = True,
+    use_database_seen_urls: bool = True,
 ) -> list[RawArticle]:
     summary = await fetch_all_sources_report(
         sources=sources,
@@ -53,6 +54,7 @@ async def fetch_all_sources(
         client=client,
         now=now,
         persist_to_db=persist_to_db,
+        use_database_seen_urls=use_database_seen_urls,
     )
     return summary.articles
 
@@ -66,6 +68,7 @@ async def fetch_all_sources_report(
     client: httpx.AsyncClient | None = None,
     now: datetime | None = None,
     persist_to_db: bool = True,
+    use_database_seen_urls: bool = True,
 ) -> FetchSummary:
     if settings is None or database_path is None:
         app_config = load_config()
@@ -105,6 +108,7 @@ async def fetch_all_sources_report(
         raw_articles,
         database_path=database_path,
         dedup_window_days=settings.dedup_window_days,
+        use_database_seen_urls=use_database_seen_urls,
     )
     stored_count = (
         save_articles(
@@ -124,6 +128,7 @@ async def fetch_all_sources_report(
         articles_deduplicated=len(deduplicated_articles),
         articles_saved=stored_count,
         persisted_to_db=persist_to_db,
+        used_database_seen_urls=use_database_seen_urls,
     )
     return FetchSummary(
         articles=deduplicated_articles,

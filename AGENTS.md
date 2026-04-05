@@ -30,6 +30,8 @@ Fetcher → Analyzer → Renderer → Sender
 
 Entry point: `python -m src.main`
 
+Primary operator entry point for local work: `python scripts/run_manual.py`
+
 ---
 
 ## Tech Stack
@@ -104,7 +106,7 @@ dpns/
 - Robots.txt respected; 1 req/sec per domain rate limit.
 
 ### Email Design
-- Max width 640px, table-based layout for Outlook compatibility.
+- Current desktop max width: 880px, table-based layout for Outlook compatibility.
 - Color palette: navy header `#1a2744`, teal accent `#0891b2`, light gray cards `#f8f9fa`.
 - Digest structure: Top Story → Key Developments → On Our Radar → Quick Hits → Footer.
 - CSS inlined via `premailer` for broad email client compatibility.
@@ -112,7 +114,16 @@ dpns/
 ### Storage
 - SQLite at `data/dpns.db` — tracks articles (dedup), pipeline runs, and delivery logs.
 - Dedup window: 7 days by URL (normalized — tracking params stripped).
-- Issue numbers auto-increment from pipeline run count.
+- Stored articles are used for recent-URL dedup and testing reuse flows, not as an LLM cache.
+- Current issue number is fixed to `0` through `config/settings.yaml` via `issue_number_override`.
+
+### Current Runtime Settings Worth Knowing
+
+- `max_digest_items: 15`
+- `max_digest_items_per_source: 3`
+- `dedup_window_days: 7`
+- `email_max_width_px: 880`
+- `issue_number_override: 0`
 
 ---
 
@@ -140,6 +151,10 @@ EMAIL_FROM=news-scout@yourdomain.com
 LOG_LEVEL=INFO          # DEBUG for local dev
 DRY_RUN=false           # Set true to skip sending
 PIPELINE_TIMEOUT=600    # Max pipeline runtime (seconds)
+MAX_DIGEST_ITEMS=15
+MAX_DIGEST_ITEMS_PER_SOURCE=3
+EMAIL_MAX_WIDTH_PX=880
+ISSUE_NUMBER_OVERRIDE=0
 ```
 
 ---
@@ -164,6 +179,77 @@ python scripts/run_manual.py --test-email you@example.com
 python -m src.main
 ```
 
+### Manual Run Flags
+
+`scripts/run_manual.py` supports these flags:
+
+- `--dry-run`
+  Full fetch/analyze/render pipeline, but skip send.
+- `--preview`
+  Build the live digest, write HTML/plain-text previews, and open the HTML preview.
+- `--preview-path PATH`
+  Override the HTML preview output path.
+- `--plaintext-path PATH`
+  Override the plain-text preview output path.
+- `--test-email EMAIL`
+  Build the live digest and send it only to the supplied address.
+- `--sources-only`
+  Fetch sources only. No LLM analysis, no rendering, no email.
+- `--ignore-seen-db`
+  Fetch live sources while ignoring the current seen-URL dedup state in SQLite.
+- `--reuse-seen-db`
+  Skip live fetch and rebuild the run from articles currently stored in SQLite.
+
+Invalid combinations:
+
+- `--dry-run` cannot be combined with `--preview` or `--test-email`.
+- `--sources-only` cannot be combined with `--dry-run`, `--preview`, or `--test-email`.
+- `--ignore-seen-db` cannot be combined with `--reuse-seen-db`.
+- `--sources-only` cannot be combined with `--reuse-seen-db`.
+
+### Test Runs: Important Behavior
+
+This repository now has three distinct testing behaviors that matter for repeated same-day runs.
+
+1. Normal run
+   Command: `python scripts/run_manual.py`
+   Behavior:
+   Fetches live sources, applies DB-backed recent-URL dedup, runs analysis, sends email, and on successful live completion persists article metadata back to SQLite.
+
+2. Refetch while ignoring what was already seen
+   Command: `python scripts/run_manual.py --ignore-seen-db`
+   Behavior:
+   Fetches live sources again, ignores the current DB seen set during dedup, and is intended for repeated testing against live content. Batch-local duplicate URLs are still removed. On preview/test-email runs in this mode, the `articles` table is refreshed as part of the explicit testing flow.
+
+3. Reuse what is already in SQLite
+   Command: `python scripts/run_manual.py --dry-run --reuse-seen-db`
+   Behavior:
+   Skips network fetch completely and reuses stored articles from `data/dpns.db`. This is the most repeatable option for testing layout, prompt changes, or send behavior without hitting sources again. It fails if the `articles` table is empty.
+
+Special note:
+
+- `--preview` and `--test-email` use live fetched content by default.
+- `--preview --reuse-seen-db` and `--test-email --reuse-seen-db` are the recommended repeatable test modes once the DB has been populated.
+- `--sources-only` never persists fetched articles.
+
+### SQLite Behavior Summary
+
+- The pipeline fetches live sources on every normal run.
+- Stored articles are not used as an LLM cache.
+- Stored articles are used for recent-URL dedup and for the explicit `--reuse-seen-db` testing mode.
+- The `articles` table is upserted by normalized URL.
+- Clearing `articles` removes the current seen set and also removes the source material for `--reuse-seen-db`.
+
+### Mock Template Testing
+
+For design-only or static content checks, use:
+
+```bash
+python scripts/test_email.py
+python scripts/test_email.py --issue-number 0 --date "April 4, 2026"
+python scripts/test_email.py --to you@example.com
+```
+
 ### Running tests
 ```bash
 pytest tests/
@@ -174,6 +260,26 @@ pytest tests/test_pipeline.py -v  # Integration test (makes real LLM calls)
 ### Validating sources
 ```bash
 python scripts/seed_sources.py    # Health-check all sources.yaml entries
+```
+
+### Recommended Local Test Sequences
+
+Populate the DB from live content without being blocked by the current seen set:
+
+```bash
+python scripts/run_manual.py --ignore-seen-db --dry-run
+```
+
+Preview from the exact stored DB set without refetching:
+
+```bash
+python scripts/run_manual.py --preview --reuse-seen-db
+```
+
+Send a one-off repeatable test email from the stored DB set:
+
+```bash
+python scripts/run_manual.py --test-email you@example.com --reuse-seen-db
 ```
 
 ---
