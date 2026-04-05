@@ -25,6 +25,7 @@ jobs:
     timeout-minutes: 20
     env:
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      BRAVE_SEARCH_API_KEY: ${{ secrets.BRAVE_SEARCH_API_KEY }}
       AGENTMAIL_API_KEY: ${{ secrets.AGENTMAIL_API_KEY }}
       AGENTMAIL_INBOX_ID: ${{ secrets.AGENTMAIL_INBOX_ID }}
       EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
