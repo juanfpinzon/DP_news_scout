@@ -82,10 +82,19 @@ async def compose_digest(
     user_prompt = _build_user_prompt(selected_articles)
 
     owns_client = llm_client is None
-    active_client = llm_client or LLMClient(
-        app_config=app_config,
-        settings=settings,
-    )
+    if llm_client is None:
+        active_client = LLMClient(
+            app_config=app_config,
+            settings=settings,
+            primary_model=settings.llm_digest_model,
+        )
+    else:
+        with_primary_model = getattr(llm_client, "with_primary_model", None)
+        active_client = (
+            with_primary_model(settings.llm_digest_model)
+            if callable(with_primary_model)
+            else llm_client
+        )
 
     try:
         try:
@@ -272,6 +281,7 @@ def _parse_digest_payload(response_text: str, articles: list[ScoredArticle]) -> 
         raise DigestCompositionError("Digest payload must be a JSON object")
 
     article_urls = {article.url for article in articles}
+    article_lookup = {article.url: article for article in articles}
     used_urls: set[str] = set()
 
     top_story = _parse_digest_item(
@@ -294,6 +304,7 @@ def _parse_digest_payload(response_text: str, articles: list[ScoredArticle]) -> 
     )
     quick_hits = _parse_quick_hits(
         payload.get("quick_hits"),
+        article_lookup=article_lookup,
         article_urls=article_urls,
         used_urls=used_urls,
     )
@@ -337,8 +348,12 @@ def _parse_digest_item(
     if not isinstance(value, dict):
         raise DigestCompositionError(f"Digest payload field '{field_name}' must be an object")
 
-    url = _require_string(value.get("url"), f"{field_name}.url")
-    _validate_digest_url(url, field_name=field_name, article_urls=article_urls, used_urls=used_urls)
+    url = _validate_digest_url(
+        _require_string(value.get("url"), f"{field_name}.url"),
+        field_name=field_name,
+        article_urls=article_urls,
+        used_urls=used_urls,
+    )
 
     return DigestItem(
         url=url,
@@ -356,6 +371,7 @@ def _parse_digest_item(
 def _parse_quick_hits(
     value: Any,
     *,
+    article_lookup: dict[str, ScoredArticle],
     article_urls: set[str],
     used_urls: set[str],
 ) -> list[QuickHit]:
@@ -368,12 +384,20 @@ def _parse_quick_hits(
         if not isinstance(item, dict):
             raise DigestCompositionError(f"Digest payload field '{field_name}' must be an object")
 
-        url = _require_string(item.get("url"), f"{field_name}.url")
-        _validate_digest_url(url, field_name=field_name, article_urls=article_urls, used_urls=used_urls)
+        url = _validate_digest_url(
+            _require_string(item.get("url"), f"{field_name}.url"),
+            field_name=field_name,
+            article_urls=article_urls,
+            used_urls=used_urls,
+        )
         quick_hits.append(
             QuickHit(
                 url=url,
-                one_liner=_require_string(item.get("one_liner"), f"{field_name}.one_liner"),
+                one_liner=_resolve_quick_hit_one_liner(
+                    item.get("one_liner"),
+                    field_name=f"{field_name}.one_liner",
+                    article=article_lookup[url],
+                ),
                 source=_require_string(item.get("source"), f"{field_name}.source"),
             )
         )
@@ -386,14 +410,41 @@ def _validate_digest_url(
     field_name: str,
     article_urls: set[str],
     used_urls: set[str],
-) -> None:
-    if url not in article_urls:
-        raise DigestCompositionError(
-            f"Digest payload field '{field_name}' references unknown article URL: {url}"
-        )
-    if url in used_urls:
-        raise DigestCompositionError(f"Digest payload reuses article URL across sections: {url}")
-    used_urls.add(url)
+) -> str:
+    resolved_url = _resolve_digest_url(
+        url,
+        field_name=field_name,
+        article_urls=article_urls,
+    )
+    if resolved_url in used_urls:
+        raise DigestCompositionError(f"Digest payload reuses article URL across sections: {resolved_url}")
+    used_urls.add(resolved_url)
+    return resolved_url
+
+
+def _resolve_digest_url(
+    url: str,
+    *,
+    field_name: str,
+    article_urls: set[str],
+) -> str:
+    normalized_url = url.strip().rstrip(".,);]")
+    if normalized_url in article_urls:
+        return normalized_url
+
+    # Only repair uniquely truncated URLs. Never coerce a longer model URL
+    # down to a selected article, because that can silently relink content.
+    truncated_candidates = sorted(
+        candidate
+        for candidate in article_urls
+        if len(normalized_url) < len(candidate) and candidate.startswith(normalized_url)
+    )
+    if len(truncated_candidates) == 1:
+        return truncated_candidates[0]
+
+    raise DigestCompositionError(
+        f"Digest payload field '{field_name}' references unknown article URL: {url}"
+    )
 
 
 def _require_string(value: Any, field_name: str, *, allow_empty: bool = False) -> str:
@@ -404,6 +455,31 @@ def _require_string(value: Any, field_name: str, *, allow_empty: bool = False) -
     if not allow_empty and not normalized:
         raise DigestCompositionError(f"Digest payload field '{field_name}' must not be empty")
     return normalized
+
+
+def _resolve_quick_hit_one_liner(
+    value: Any,
+    *,
+    field_name: str,
+    article: ScoredArticle,
+) -> str:
+    if isinstance(value, str):
+        normalized = value.strip()
+        if normalized:
+            return normalized
+
+    fallback = (article.summary or "").strip()
+    if fallback:
+        first_sentence = re.split(r"(?<=[.!?])\s+", fallback, maxsplit=1)[0].strip()
+        if first_sentence:
+            return first_sentence
+
+    title = article.title.strip()
+    if not title:
+        raise DigestCompositionError(f"Digest payload field '{field_name}' must be a string")
+    if title.endswith((".", "!", "?")):
+        return title
+    return f"{title}."
 
 
 def _unwrap_json_block(text: str) -> str:

@@ -106,8 +106,9 @@ Create config/settings.yaml with defaults:
   - relevance_threshold: 6 (out of 10)
   - digest_send_time: "09:00"
   - timezone: "Central European Time"
-  - llm_model: "anthropic/claude-sonnet-4-6"     # primary model via OpenRouter
-  - llm_model_fallback: "anthropic/claude-4-5-haiku" # cheaper fallback if primary unavailable
+  - llm_scoring_model: "anthropic/claude-haiku-4.5"  # cheaper scoring model via OpenRouter
+  - llm_digest_model: "anthropic/claude-sonnet-4-6"  # composition model via OpenRouter
+  - llm_model_fallback: "anthropic/claude-haiku-4.5" # shared cheaper fallback if primary unavailable
 ```
 
 **Task 1.1.3: Logging setup** ✅

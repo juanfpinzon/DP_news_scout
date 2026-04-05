@@ -49,8 +49,9 @@ def build_settings() -> Settings:
         relevance_threshold=6,
         digest_send_time="09:00",
         timezone="Central European Time",
-        llm_model="anthropic/claude-sonnet-4-6",
-        llm_model_fallback="anthropic/claude-4-5-haiku",
+        llm_scoring_model="anthropic/claude-haiku-4.5",
+        llm_digest_model="anthropic/claude-sonnet-4-6",
+        llm_model_fallback="anthropic/claude-haiku-4.5",
         database_path="data/test.db",
         log_level="INFO",
         log_file="data/logs/test.jsonl",
@@ -201,3 +202,70 @@ def test_score_articles_rejects_duplicate_urls_in_batch() -> None:
 
     with pytest.raises(RelevanceScoringError, match="unique URL"):
         asyncio.run(run())
+
+
+def test_score_articles_uses_scoring_model_when_instantiating_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class CapturingLLMClient:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+        async def complete(self, system_prompt: str, user_prompt: str, max_tokens: int) -> str:
+            return """
+            {
+              "scores": [
+                {"url": "https://example.com/article-1", "score": 8, "reasoning": "Relevant."}
+              ]
+            }
+            """
+
+        async def aclose(self) -> None:
+            return None
+
+    monkeypatch.setattr("src.analyzer.relevance.LLMClient", CapturingLLMClient)
+
+    async def run() -> list[ScoredArticle]:
+        return await score_articles([build_article(1)], settings=build_settings())
+
+    scored_articles = asyncio.run(run())
+
+    assert [article.url for article in scored_articles] == ["https://example.com/article-1"]
+    assert captured["primary_model"] == "anthropic/claude-haiku-4.5"
+
+
+def test_score_articles_uses_scoring_model_when_supplied_client_supports_override() -> None:
+    class OverrideableLLMClient(FakeLLMClient):
+        def __init__(self, responses: list[str]) -> None:
+            super().__init__(responses)
+            self.requested_primary_models: list[str] = []
+
+        def with_primary_model(self, primary_model: str) -> OverrideableLLMClient:
+            self.requested_primary_models.append(primary_model)
+            return self
+
+    llm_client = OverrideableLLMClient(
+        [
+            """
+            {
+              "scores": [
+                {"url": "https://example.com/article-1", "score": 8, "reasoning": "Relevant."}
+              ]
+            }
+            """
+        ]
+    )
+
+    async def run() -> list[ScoredArticle]:
+        return await score_articles(
+            [build_article(1)],
+            llm_client=llm_client,
+            settings=build_settings(),
+        )
+
+    scored_articles = asyncio.run(run())
+
+    assert [article.url for article in scored_articles] == ["https://example.com/article-1"]
+    assert llm_client.requested_primary_models == ["anthropic/claude-haiku-4.5"]

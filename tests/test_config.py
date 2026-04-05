@@ -26,8 +26,9 @@ def test_load_config_reads_defaults() -> None:
     assert config.settings.email_max_width_px == 880
     assert config.settings.issue_number_override == 0
     assert config.settings.timezone == "Central European Time"
-    assert config.settings.llm_model == "anthropic/claude-sonnet-4-6"
-    assert config.settings.llm_model_fallback == "anthropic/claude-4-5-haiku"
+    assert config.settings.llm_scoring_model == "anthropic/claude-haiku-4.5"
+    assert config.settings.llm_digest_model == "anthropic/claude-sonnet-4-6"
+    assert config.settings.llm_model_fallback == "anthropic/claude-haiku-4.5"
     assert len(config.sources) >= 20
     assert config.env.email_from == "news-scout@example.com"
     assert config.default_recipient_group == "test"
@@ -41,6 +42,18 @@ def test_load_config_allows_env_override(monkeypatch: pytest.MonkeyPatch) -> Non
     config = load_config()
 
     assert config.settings.max_digest_items == 12
+
+
+def test_load_config_allows_stage_specific_model_env_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_SCORING_MODEL", "anthropic/claude-haiku-4.5")
+    monkeypatch.setenv("LLM_DIGEST_MODEL", "anthropic/claude-sonnet-4-6")
+
+    config = load_config()
+
+    assert config.settings.llm_scoring_model == "anthropic/claude-haiku-4.5"
+    assert config.settings.llm_digest_model == "anthropic/claude-sonnet-4-6"
 
 
 def test_load_config_requires_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -87,7 +100,7 @@ def test_load_config_rejects_invalid_source_category(monkeypatch: pytest.MonkeyP
                 "digest_send_time": "09:00",
                 "timezone": "Central European Time",
                 "llm_model": "anthropic/claude-sonnet-4-6",
-                "llm_model_fallback": "anthropic/claude-4-5-haiku",
+                "llm_model_fallback": "anthropic/claude-haiku-4.5",
                 "database_path": "data/dpns.db",
                 "log_level": "INFO",
                 "log_file": "data/logs/dpns.jsonl",
@@ -132,7 +145,7 @@ def test_load_config_supports_legacy_recipient_list(monkeypatch: pytest.MonkeyPa
                 "digest_send_time": "09:00",
                 "timezone": "Central European Time",
                 "llm_model": "anthropic/claude-sonnet-4-6",
-                "llm_model_fallback": "anthropic/claude-4-5-haiku",
+                "llm_model_fallback": "anthropic/claude-haiku-4.5",
                 "database_path": "data/dpns.db",
                 "log_level": "INFO",
                 "log_file": "data/logs/dpns.jsonl",
@@ -160,3 +173,82 @@ def test_load_config_supports_legacy_recipient_list(monkeypatch: pytest.MonkeyPa
     assert config.default_recipient_group == "leadership"
     assert list(config.recipient_groups) == ["leadership"]
     assert [recipient.email for recipient in config.recipients] == ["leader@example.com"]
+
+
+def test_load_config_uses_legacy_llm_model_for_both_stages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_read_yaml(path: Path) -> dict:
+        if path.name == "settings.yaml":
+            return {
+                "max_articles_per_source": 10,
+                "max_digest_items": 15,
+                "relevance_threshold": 6,
+                "digest_send_time": "09:00",
+                "timezone": "Central European Time",
+                "llm_model": "anthropic/claude-sonnet-4-6",
+                "llm_model_fallback": "anthropic/claude-haiku-4.5",
+                "database_path": "data/dpns.db",
+                "log_level": "INFO",
+                "log_file": "data/logs/dpns.jsonl",
+                "dry_run": True,
+                "pipeline_timeout": 600,
+                "fetch_concurrency": 5,
+                "rss_lookback_hours": 48,
+                "dedup_window_days": 7,
+                "request_timeout_seconds": 15.0,
+                "rate_limit_seconds": 1.0,
+            }
+        if path.name == "sources.yaml":
+            return {"sources": []}
+        if path.name == "recipients.yaml":
+            return {"groups": {"test": [{"email": "reader@example.com"}]}, "default_group": "test"}
+        raise AssertionError(path)
+
+    monkeypatch.setattr("src.utils.config._read_yaml", fake_read_yaml)
+
+    config = load_config()
+
+    assert config.settings.llm_scoring_model == "anthropic/claude-sonnet-4-6"
+    assert config.settings.llm_digest_model == "anthropic/claude-sonnet-4-6"
+
+
+def test_load_config_prefers_stage_specific_models_over_legacy_alias(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_read_yaml(path: Path) -> dict:
+        if path.name == "settings.yaml":
+            return {
+                "max_articles_per_source": 10,
+                "max_digest_items": 15,
+                "relevance_threshold": 6,
+                "digest_send_time": "09:00",
+                "timezone": "Central European Time",
+                "llm_model": "anthropic/claude-sonnet-4-6",
+                "llm_scoring_model": "anthropic/claude-haiku-4.5",
+                "llm_digest_model": "anthropic/claude-sonnet-4-6",
+                "llm_model_fallback": "anthropic/claude-haiku-4.5",
+                "database_path": "data/dpns.db",
+                "log_level": "INFO",
+                "log_file": "data/logs/dpns.jsonl",
+                "dry_run": True,
+                "pipeline_timeout": 600,
+                "fetch_concurrency": 5,
+                "rss_lookback_hours": 48,
+                "dedup_window_days": 7,
+                "request_timeout_seconds": 15.0,
+                "rate_limit_seconds": 1.0,
+            }
+        if path.name == "sources.yaml":
+            return {"sources": []}
+        if path.name == "recipients.yaml":
+            return {"groups": {"test": [{"email": "reader@example.com"}]}, "default_group": "test"}
+        raise AssertionError(path)
+
+    monkeypatch.setattr("src.utils.config._read_yaml", fake_read_yaml)
+    monkeypatch.setenv("LLM_MODEL", "legacy-env-model")
+
+    config = load_config()
+
+    assert config.settings.llm_scoring_model == "anthropic/claude-haiku-4.5"
+    assert config.settings.llm_digest_model == "anthropic/claude-sonnet-4-6"

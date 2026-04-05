@@ -27,7 +27,8 @@ class Settings:
     relevance_threshold: int
     digest_send_time: str
     timezone: str
-    llm_model: str
+    llm_scoring_model: str
+    llm_digest_model: str
     llm_model_fallback: str
     database_path: str
     log_level: str
@@ -105,7 +106,20 @@ def load_config(env_file: Path | None = None) -> AppConfig:
         ),
         digest_send_time=_get_str("DIGEST_SEND_TIME", settings_data, "digest_send_time"),
         timezone=_get_str("TIMEZONE", settings_data, "timezone"),
-        llm_model=_get_str("LLM_MODEL", settings_data, "llm_model"),
+        llm_scoring_model=_get_stage_model(
+            stage_env_key="LLM_SCORING_MODEL",
+            stage_config_key="llm_scoring_model",
+            legacy_env_key="LLM_MODEL",
+            legacy_config_key="llm_model",
+            config=settings_data,
+        ),
+        llm_digest_model=_get_stage_model(
+            stage_env_key="LLM_DIGEST_MODEL",
+            stage_config_key="llm_digest_model",
+            legacy_env_key="LLM_MODEL",
+            legacy_config_key="llm_model",
+            config=settings_data,
+        ),
         llm_model_fallback=_get_str(
             "LLM_MODEL_FALLBACK",
             settings_data,
@@ -196,6 +210,35 @@ def _get_str(env_key: str, config: dict[str, Any], config_key: str) -> str:
     if value is None or str(value).strip() == "":
         raise ConfigError(f"Missing required config value for '{config_key}'")
     return str(value).strip()
+
+
+def _get_stage_model(
+    *,
+    stage_env_key: str,
+    stage_config_key: str,
+    legacy_env_key: str,
+    legacy_config_key: str,
+    config: dict[str, Any],
+) -> str:
+    for env_key, config_key in (
+        (stage_env_key, stage_config_key),
+        (legacy_env_key, legacy_config_key),
+    ):
+        env_value = os.getenv(env_key)
+        if env_value is not None:
+            normalized = env_value.strip()
+            if not normalized:
+                raise ConfigError(f"Missing required config value for '{stage_config_key}'")
+            return normalized
+
+        config_value = config.get(config_key)
+        if config_value is not None:
+            normalized = str(config_value).strip()
+            if not normalized:
+                raise ConfigError(f"Missing required config value for '{stage_config_key}'")
+            return normalized
+
+    raise ConfigError(f"Missing required config value for '{stage_config_key}'")
 
 
 def _get_int(env_key: str, config: dict[str, Any], config_key: str) -> int:

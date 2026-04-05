@@ -44,6 +44,8 @@ class LLMClient:
         settings: Settings | None = None,
         api_key: str | None = None,
         app_config: AppConfig | None = None,
+        primary_model: str | None = None,
+        fallback_model: str | None = None,
         client: AsyncOpenAI | Any | None = None,
         metadata_client: httpx.AsyncClient | Any | None = None,
         logger: Any | None = None,
@@ -70,6 +72,12 @@ class LLMClient:
         self.settings = settings
         self.api_key = api_key
         self.logger = logger or get_logger(__name__, pipeline_stage="analyzer")
+        self.primary_model = primary_model or settings.llm_digest_model
+        self.fallback_model = fallback_model or settings.llm_model_fallback
+        if not self.primary_model.strip():
+            raise ValueError("primary_model must not be empty")
+        if not self.fallback_model.strip():
+            raise ValueError("fallback_model must not be empty")
         self.max_attempts = max_attempts
         self.backoff_base_seconds = backoff_base_seconds
         self._sleep = sleep
@@ -92,6 +100,24 @@ class LLMClient:
             timeout=settings.request_timeout_seconds,
         )
 
+    def with_primary_model(self, primary_model: str) -> LLMClient:
+        normalized_primary_model = primary_model.strip()
+        if not normalized_primary_model:
+            raise ValueError("primary_model must not be empty")
+
+        return LLMClient(
+            settings=self.settings,
+            api_key=self.api_key,
+            primary_model=normalized_primary_model,
+            fallback_model=self.fallback_model,
+            client=self.client,
+            metadata_client=self.metadata_client,
+            logger=self.logger,
+            max_attempts=self.max_attempts,
+            backoff_base_seconds=self.backoff_base_seconds,
+            sleep=self._sleep,
+        )
+
     async def complete(
         self,
         system_prompt: str,
@@ -107,8 +133,8 @@ class LLMClient:
         if max_tokens <= 0:
             raise ValueError("max_tokens must be greater than 0")
 
-        primary_model = self.settings.llm_model
-        fallback_model = self.settings.llm_model_fallback
+        primary_model = self.primary_model
+        fallback_model = self.fallback_model
         active_model = primary_model
         fallback_used = False
         last_error: Exception | None = None

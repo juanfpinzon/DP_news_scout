@@ -108,8 +108,9 @@ def build_settings() -> Settings:
         relevance_threshold=6,
         digest_send_time="09:00",
         timezone="Central European Time",
-        llm_model="anthropic/claude-sonnet-4-6",
-        llm_model_fallback="anthropic/claude-4-5-haiku",
+        llm_scoring_model="anthropic/claude-haiku-4.5",
+        llm_digest_model="anthropic/claude-sonnet-4-6",
+        llm_model_fallback="anthropic/claude-haiku-4.5",
         database_path="data/test.db",
         log_level="INFO",
         log_file="data/logs/test.jsonl",
@@ -228,8 +229,59 @@ def test_llm_client_forwards_structured_output_options() -> None:
 
     openai_client = asyncio.run(run())
 
+    assert openai_client.calls[0]["model"] == "anthropic/claude-sonnet-4-6"
     assert openai_client.calls[0]["response_format"] == {"type": "json_object"}
     assert openai_client.calls[0]["extra_body"] == {"plugins": [{"id": "response-healing"}]}
+
+
+def test_llm_client_uses_explicit_primary_model_override() -> None:
+    async def run() -> tuple[str, DummyLogger, FakeOpenAIClient]:
+        logger = DummyLogger()
+        openai_client = FakeOpenAIClient([build_chat_response(content="Scoring body")])
+        client = LLMClient(
+            settings=build_settings(),
+            api_key="test-key",
+            primary_model="anthropic/claude-haiku-4.5",
+            client=openai_client,
+            metadata_client=FakeMetadataClient(),
+            logger=logger,
+        )
+        result = await client.complete(
+            system_prompt="System prompt",
+            user_prompt="User prompt",
+            max_tokens=150,
+        )
+        return result, logger, openai_client
+
+    result, logger, openai_client = asyncio.run(run())
+
+    assert result == "Scoring body"
+    assert openai_client.calls[0]["model"] == "anthropic/claude-haiku-4.5"
+    success_log = logger.find("info", "llm_completion_succeeded")
+    assert success_log["requested_model"] == "anthropic/claude-haiku-4.5"
+    assert success_log["active_model"] == "anthropic/claude-haiku-4.5"
+
+
+def test_llm_client_with_primary_model_returns_shared_client_with_override() -> None:
+    openai_client = FakeOpenAIClient([build_chat_response(content="Digest body")])
+    metadata_client = FakeMetadataClient()
+    client = LLMClient(
+        settings=build_settings(),
+        api_key="test-key",
+        client=openai_client,
+        metadata_client=metadata_client,
+        logger=DummyLogger(),
+    )
+
+    cloned_client = client.with_primary_model("anthropic/claude-haiku-4.5")
+
+    assert cloned_client is not client
+    assert cloned_client.primary_model == "anthropic/claude-haiku-4.5"
+    assert cloned_client.fallback_model == client.fallback_model
+    assert cloned_client.client is client.client
+    assert cloned_client.metadata_client is client.metadata_client
+    assert cloned_client._owns_openai_client is False
+    assert cloned_client._owns_metadata_client is False
 
 
 def test_llm_client_configures_sdk_timeout_and_disables_internal_retries(
@@ -265,7 +317,7 @@ def test_llm_client_falls_back_after_primary_rate_limit() -> None:
                 FakeAPIError(429, "rate limited"),
                 build_chat_response(
                     content="Fallback response",
-                    model="anthropic/claude-4-5-haiku",
+                    model="anthropic/claude-haiku-4.5",
                 ),
             ]
         )
@@ -290,17 +342,17 @@ def test_llm_client_falls_back_after_primary_rate_limit() -> None:
     assert result == "Fallback response"
     assert [call["model"] for call in openai_client.calls] == [
         "anthropic/claude-sonnet-4-6",
-        "anthropic/claude-4-5-haiku",
+        "anthropic/claude-haiku-4.5",
     ]
     assert sleep_calls == [0.25]
 
     retry_log = logger.find("warning", "llm_completion_retrying")
     assert retry_log["status_code"] == 429
     assert retry_log["fallback_after_error"] is True
-    assert retry_log["next_model"] == "anthropic/claude-4-5-haiku"
+    assert retry_log["next_model"] == "anthropic/claude-haiku-4.5"
 
     success_log = logger.find("info", "llm_completion_succeeded")
-    assert success_log["active_model"] == "anthropic/claude-4-5-haiku"
+    assert success_log["active_model"] == "anthropic/claude-haiku-4.5"
     assert success_log["fallback_used"] is True
 
 

@@ -70,10 +70,19 @@ async def score_articles(
     system_prompt = _build_system_prompt()
 
     owns_client = llm_client is None
-    active_client = llm_client or LLMClient(
-        app_config=app_config,
-        settings=settings,
-    )
+    if llm_client is None:
+        active_client = LLMClient(
+            app_config=app_config,
+            settings=settings,
+            primary_model=settings.llm_scoring_model,
+        )
+    else:
+        with_primary_model = getattr(llm_client, "with_primary_model", None)
+        active_client = (
+            with_primary_model(settings.llm_scoring_model)
+            if callable(with_primary_model)
+            else llm_client
+        )
 
     try:
         retained_articles: list[ScoredArticle] = []

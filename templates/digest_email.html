@@ -15,244 +15,345 @@
   </noscript>
   <![endif]-->
   <style>
-    /* Reset */
     body, table, td, p, a, li { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
     table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
     img { -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }
     body { margin: 0; padding: 0; width: 100% !important; height: 100% !important; }
-
-    /* Links */
-    a { color: #0891b2; }
+    a { color: #0891b2; text-decoration: none; }
     a:hover { text-decoration: underline; }
 
-    /* Mobile */
     @media only screen and (max-width: 920px) {
       .email-container { width: 100% !important; max-width: 100% !important; }
       .fluid { width: 100% !important; max-width: 100% !important; height: auto !important; }
       .stack-column { display: block !important; width: 100% !important; }
-      .mobile-padding { padding-left: 16px !important; padding-right: 16px !important; }
-      .mobile-body { font-size: 16px !important; line-height: 1.6 !important; }
+      .mobile-padding { padding-left: 20px !important; padding-right: 20px !important; }
+      .mobile-body { font-size: 15px !important; line-height: 1.65 !important; }
+      .issue-num { font-size: 44px !important; }
     }
   </style>
 </head>
-<body style="margin:0;padding:0;background-color:#e5e7eb;font-family:Arial,Helvetica,sans-serif;">
+<body style="margin:0;padding:0;background-color:#cdd4db;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
 
   <!-- Outer wrapper -->
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#e5e7eb;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#cdd4db" style="background-color:#cdd4db;">
     <tr>
-      <td align="center" style="padding:24px 0;">
+      <td align="center" style="padding:32px 16px 44px;">
 
-        <!-- Email container: configurable desktop max -->
-        <table role="presentation" class="email-container" width="{{ max_width_px }}" cellpadding="0" cellspacing="0" border="0" style="max-width:{{ max_width_px }}px;background-color:#ffffff;">
+        <!-- Email container -->
+        <!--[if mso]>
+        <table role="presentation" align="center" width="{{ max_width_px }}" cellpadding="0" cellspacing="0" border="0"><tr><td>
+        <![endif]-->
+        <table role="presentation" class="email-container" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:{{ max_width_px }}px;background-color:#ffffff;border:1px solid #b8c2cc;">
 
-          <!-- ============ HEADER ============ -->
+          <!-- ================================================================
+               HEADER
+               ================================================================ -->
           <tr>
-            <td style="background-color:#1a2744;padding:28px 32px;text-align:center;">
+            <td bgcolor="#1a2332" style="background-color:#1a2332;padding:0;">
+
+              <!-- Teal top accent stripe -->
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
-                  <td style="font-family:Arial,Helvetica,sans-serif;font-size:22px;font-weight:bold;color:#ffffff;letter-spacing:0.5px;">
-                    DIGITAL PROCUREMENT NEWS SCOUT
-                  </td>
+                  <td height="4" bgcolor="#0891b2" style="background-color:#0891b2;font-size:1px;line-height:1px;">&nbsp;</td>
                 </tr>
+              </table>
+
+              <!-- Header: branding (left) + issue number (right) -->
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
-                  <td style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#ffffff;padding-top:8px;">
-                    {{ date }} &middot; Issue #{{ issue_number }} &middot; {{ source_count_label }}
+                  <td valign="middle" width="100%" class="mobile-padding" style="padding:26px 32px 24px;">
+                    <p style="margin:0 0 7px 0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:bold;color:#2d8b8b;letter-spacing:3px;text-transform:uppercase;">
+                      PepsiCo Digital Procurement
+                    </p>
+                    <p style="margin:0 0 11px 0;font-family:Georgia,'Times New Roman',serif;font-size:36px;font-weight:normal;color:#f1faee;line-height:1.1;letter-spacing:1px;">
+                      News&nbsp;Scout
+                    </p>
+                    <p style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;color:#5a7d9a;letter-spacing:0.3px;">
+                      {{ date }}&nbsp;&nbsp;&middot;&nbsp;&nbsp;{{ source_count_label }}
+                    </p>
+                  </td>
+                  <!-- Large decorative issue number -->
+                  <td valign="middle" align="right" class="mobile-padding" style="padding:22px 32px 22px 0;white-space:nowrap;">
+                    <p class="issue-num" style="margin:0 0 3px 0;font-family:Georgia,'Times New Roman',serif;font-size:64px;font-weight:bold;color:#253b56;line-height:1;letter-spacing:-2px;text-align:right;">
+                      #{{ issue_number }}
+                    </p>
+                    <p style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;color:#2d4a62;letter-spacing:3px;text-transform:uppercase;text-align:right;">
+                      Issue
+                    </p>
                   </td>
                 </tr>
               </table>
+
             </td>
           </tr>
 
-          <!-- ============ TOP STORY ============ -->
+          <!-- ================================================================
+               TOP STORY
+               ================================================================ -->
           <tr>
-            <td class="mobile-padding" style="padding:28px 32px 0;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <td class="mobile-padding" style="padding:32px 32px 0;">
+
+              <!-- Section badge -->
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:14px;">
                 <tr>
-                  <td style="font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:bold;color:#0891b2;letter-spacing:1.5px;text-transform:uppercase;padding-bottom:12px;">
-                    &#9733; TOP STORY
+                  <td bgcolor="#0891b2" style="background-color:#0891b2;padding:5px 12px;">
+                    <span style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:bold;color:#ffffff;letter-spacing:2.5px;text-transform:uppercase;">&#9733;&nbsp; TOP STORY</span>
                   </td>
                 </tr>
               </table>
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e5e7eb;border-left:4px solid #0891b2;background-color:#f8f9fa;">
+
+              <!-- Card: teal left column + content -->
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #b8ccd8;">
                 <tr>
-                  <td style="padding:20px 24px;">
+                  <td width="5" bgcolor="#0891b2" style="background-color:#0891b2;font-size:1px;line-height:1px;">&nbsp;</td>
+                  <td bgcolor="#f0f9fb" style="background-color:#f0f9fb;padding:26px 28px;">
                     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                       <tr>
-                        <td style="font-family:Arial,Helvetica,sans-serif;font-size:18px;font-weight:bold;line-height:1.3;padding-bottom:10px;">
-                          <a href="{{ top_story.url }}" style="color:#0891b2;text-decoration:none;">{{ top_story.headline }}</a>
+                        <td style="font-family:Georgia,'Times New Roman',serif;font-size:21px;font-weight:bold;line-height:1.35;color:#1a2332;padding-bottom:13px;">
+                          <a href="{{ top_story.url }}" style="color:#1a2332;text-decoration:none;">{{ top_story.headline }}</a>
                         </td>
                       </tr>
                       <tr>
-                        <td class="mobile-body" style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#374151;padding-bottom:12px;">
+                        <td class="mobile-body" style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.65;color:#374151;padding-bottom:16px;">
                           {{ top_story.summary }}
                         </td>
                       </tr>
+                      <!-- Why it matters callout -->
                       <tr>
-                        <td class="mobile-body" style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#0891b2;padding-bottom:12px;">
-                          <strong>Why it matters:</strong> {{ top_story.why_it_matters }}
+                        <td style="padding-bottom:16px;">
+                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                            <tr>
+                              <td width="3" bgcolor="#0891b2" style="background-color:#0891b2;font-size:1px;line-height:1px;">&nbsp;</td>
+                              <td bgcolor="#ddf0f5" style="background-color:#ddf0f5;padding:10px 14px;">
+                                <p style="margin:0 0 4px 0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:bold;color:#0891b2;letter-spacing:1.5px;text-transform:uppercase;">Why it matters</p>
+                                <p class="mobile-body" style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:13px;line-height:1.55;color:#1c4f5e;">{{ top_story.why_it_matters }}</p>
+                              </td>
+                            </tr>
+                          </table>
                         </td>
                       </tr>
                       <tr>
-                        <td style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#6b7280;">
-                          {{ top_story.source }}{% if top_story.date %} &middot; {{ top_story.date }}{% endif %}
+                        <td style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;color:#8a9ab0;">
+                          <span style="font-weight:bold;color:#5a6b7a;text-transform:uppercase;letter-spacing:0.8px;font-size:10px;">{{ top_story.source }}</span>{% if top_story.date %}&nbsp;&middot;&nbsp;{{ top_story.date }}{% endif %}&nbsp;&nbsp;&nbsp;<a href="{{ top_story.url }}" style="color:#0891b2;font-weight:bold;font-size:11px;">Read more &rarr;</a>
                         </td>
                       </tr>
                     </table>
                   </td>
                 </tr>
               </table>
+
             </td>
           </tr>
 
           {% if key_developments|length %}
-          <!-- ============ KEY DEVELOPMENTS ============ -->
+          <!-- ================================================================
+               KEY DEVELOPMENTS
+               ================================================================ -->
           <tr>
-            <td class="mobile-padding" style="padding:28px 32px 0;">
+            <td class="mobile-padding" style="padding:32px 32px 0;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
-                  <td style="font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:bold;color:#1a2744;letter-spacing:1.5px;text-transform:uppercase;padding-bottom:4px;">
-                    KEY DEVELOPMENTS
+                  <td style="padding-bottom:8px;">
+                    <span style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:bold;color:#1a2332;letter-spacing:2.5px;text-transform:uppercase;">Key Developments</span>
                   </td>
                 </tr>
                 <tr>
-                  <td style="border-bottom:2px solid #e5e7eb;padding-bottom:0;height:1px;font-size:1px;line-height:1px;">&nbsp;</td>
+                  <td height="2" bgcolor="#1a2332" style="background-color:#1a2332;font-size:1px;line-height:1px;">&nbsp;</td>
                 </tr>
               </table>
             </td>
           </tr>
+
           {% for item in key_developments %}
           <tr>
-            <td class="mobile-padding" style="padding:{{ '16px' if loop.first else '0' }} 32px 0;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f8f9fa;border:1px solid #e5e7eb;border-radius:4px;">
+            <td class="mobile-padding" style="padding:{{ '14px' if loop.first else '10px' }} 32px 0;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #dde5ea;">
                 <tr>
-                  <td style="padding:16px 20px;">
+                  <td bgcolor="#ffffff" style="background-color:#ffffff;padding:18px 20px;">
                     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                       <tr>
-                        <td style="font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:bold;line-height:1.3;padding-bottom:8px;">
-                          <a href="{{ item.url }}" style="color:#0891b2;text-decoration:none;">{{ item.headline }}</a>
+                        <!-- Numbered badge -->
+                        <td valign="top" width="44" style="padding-right:14px;padding-top:2px;">
+                          <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                            <tr>
+                              <td width="30" height="30" align="center" valign="middle" bgcolor="#1a2332" style="background-color:#1a2332;font-family:Georgia,'Times New Roman',serif;font-size:12px;font-weight:bold;color:#a8dadc;text-align:center;line-height:30px;">
+                                {{ '%02d' % loop.index }}
+                              </td>
+                            </tr>
+                          </table>
                         </td>
-                      </tr>
-                      <tr>
-                        <td class="mobile-body" style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#374151;padding-bottom:8px;">
-                          {{ item.summary }}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td class="mobile-body" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.5;color:#0891b2;padding-bottom:8px;">
-                          <strong>Why it matters:</strong> {{ item.why_it_matters }}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#6b7280;">
-                          {{ item.source }}{% if item.date %} &middot; {{ item.date }}{% endif %}
+                        <!-- Content -->
+                        <td valign="top">
+                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                            <tr>
+                              <td style="font-family:Georgia,'Times New Roman',serif;font-size:16px;font-weight:bold;line-height:1.35;color:#1a2332;padding-bottom:8px;">
+                                <a href="{{ item.url }}" style="color:#1a2332;text-decoration:none;">{{ item.headline }}</a>
+                              </td>
+                            </tr>
+                            <tr>
+                              <td class="mobile-body" style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:13px;line-height:1.6;color:#4b5563;padding-bottom:10px;">
+                                {{ item.summary }}
+                              </td>
+                            </tr>
+                            <!-- Why it matters — seafoam accent -->
+                            <tr>
+                              <td style="padding-bottom:10px;">
+                                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                                  <tr>
+                                    <td width="3" bgcolor="#a8dadc" style="background-color:#a8dadc;font-size:1px;line-height:1px;">&nbsp;</td>
+                                    <td style="padding:7px 12px;">
+                                      <span style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:bold;color:#2d8b8b;letter-spacing:1px;text-transform:uppercase;">Why it matters&nbsp;</span><span class="mobile-body" style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;line-height:1.5;color:#2e4a55;">{{ item.why_it_matters }}</span>
+                                    </td>
+                                  </tr>
+                                </table>
+                              </td>
+                            </tr>
+                            <tr>
+                              <td style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;color:#8a9ab0;">
+                                <span style="font-weight:bold;color:#5a6b7a;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">{{ item.source }}</span>{% if item.date %}&nbsp;&middot;&nbsp;{{ item.date }}{% endif %}&nbsp;&nbsp;&nbsp;<a href="{{ item.url }}" style="color:#0891b2;font-size:11px;">Read &rarr;</a>
+                              </td>
+                            </tr>
+                          </table>
                         </td>
                       </tr>
                     </table>
                   </td>
                 </tr>
               </table>
-              {% if not loop.last %}
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-                <tr><td style="height:8px;font-size:1px;line-height:1px;">&nbsp;</td></tr>
-              </table>
-              {% endif %}
             </td>
           </tr>
           {% endfor %}
           {% endif %}
 
           {% if on_our_radar|length %}
-          <!-- ============ ON OUR RADAR ============ -->
+          <!-- ================================================================
+               ON OUR RADAR
+               ================================================================ -->
           <tr>
-            <td class="mobile-padding" style="padding:28px 32px 0;">
+            <td class="mobile-padding" style="padding:32px 32px 0;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
-                  <td style="font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:bold;color:#1a2744;letter-spacing:1.5px;text-transform:uppercase;padding-bottom:4px;">
-                    ON OUR RADAR
+                  <td style="padding-bottom:8px;">
+                    <span style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:bold;color:#1a2332;letter-spacing:2.5px;text-transform:uppercase;">On Our Radar</span>
                   </td>
                 </tr>
                 <tr>
-                  <td style="border-bottom:2px solid #e5e7eb;padding-bottom:0;height:1px;font-size:1px;line-height:1px;">&nbsp;</td>
+                  <td height="2" bgcolor="#1a2332" style="background-color:#1a2332;font-size:1px;line-height:1px;">&nbsp;</td>
                 </tr>
               </table>
             </td>
           </tr>
+
           {% for item in on_our_radar %}
           <tr>
-            <td class="mobile-padding" style="padding:{{ '16px' if loop.first else '12px' }} 32px 0;">
+            <td class="mobile-padding" style="padding:{{ '14px' if loop.first else '0' }} 32px 0;">
+              {% if not loop.first %}
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
-                  <td style="font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:bold;line-height:1.3;padding-bottom:4px;">
-                    <a href="{{ item.url }}" style="color:#0891b2;text-decoration:none;">{{ item.headline }}</a>
-                  </td>
-                </tr>
-                <tr>
-                  <td class="mobile-body" style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#374151;padding-bottom:4px;">
-                    {{ item.summary }}
-                  </td>
-                </tr>
-                <tr>
-                  <td style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#6b7280;">
-                    {{ item.source }}{% if item.date %} &middot; {{ item.date }}{% endif %}
-                  </td>
+                  <td height="1" bgcolor="#dde5ea" style="background-color:#dde5ea;font-size:1px;line-height:1px;">&nbsp;</td>
                 </tr>
               </table>
-              {% if not loop.last %}
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-                <tr><td style="border-bottom:1px solid #e5e7eb;height:1px;font-size:1px;line-height:1px;">&nbsp;</td></tr>
+                <tr><td height="14" style="font-size:1px;line-height:1px;">&nbsp;</td></tr>
               </table>
               {% endif %}
+              <!-- Item: teal left bar + content -->
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td width="3" bgcolor="#2d8b8b" style="background-color:#2d8b8b;font-size:1px;line-height:1px;">&nbsp;</td>
+                  <td style="padding-left:16px;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td style="font-family:Georgia,'Times New Roman',serif;font-size:15px;font-weight:bold;line-height:1.35;color:#1a2332;padding-bottom:5px;">
+                          <a href="{{ item.url }}" style="color:#1a2332;text-decoration:none;">{{ item.headline }}</a>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td class="mobile-body" style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:13px;line-height:1.55;color:#4b5563;padding-bottom:7px;">
+                          {{ item.summary }}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;color:#8a9ab0;">
+                          <span style="font-weight:bold;color:#5a6b7a;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">{{ item.source }}</span>{% if item.date %}&nbsp;&middot;&nbsp;{{ item.date }}{% endif %}&nbsp;&nbsp;&nbsp;<a href="{{ item.url }}" style="color:#0891b2;font-size:11px;">Read &rarr;</a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
             </td>
           </tr>
           {% endfor %}
           {% endif %}
 
           {% if quick_hits|length %}
-          <!-- ============ QUICK HITS ============ -->
+          <!-- ================================================================
+               QUICK HITS
+               ================================================================ -->
           <tr>
-            <td class="mobile-padding" style="padding:28px 32px 0;">
+            <td class="mobile-padding" style="padding:32px 32px 0;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
-                  <td style="font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:bold;color:#1a2744;letter-spacing:1.5px;text-transform:uppercase;padding-bottom:4px;">
-                    QUICK HITS
+                  <td style="padding-bottom:8px;">
+                    <span style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:bold;color:#1a2332;letter-spacing:2.5px;text-transform:uppercase;">Quick Hits</span>
                   </td>
                 </tr>
                 <tr>
-                  <td style="border-bottom:2px solid #e5e7eb;padding-bottom:0;height:1px;font-size:1px;line-height:1px;">&nbsp;</td>
+                  <td height="2" bgcolor="#1a2332" style="background-color:#1a2332;font-size:1px;line-height:1px;">&nbsp;</td>
                 </tr>
               </table>
             </td>
           </tr>
+
+          {% for hit in quick_hits %}
           <tr>
-            <td class="mobile-padding" style="padding:16px 32px 0;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-                {% for hit in quick_hits %}
+            <td class="mobile-padding" style="padding:{{ '14px' if loop.first else '8px' }} 32px 0;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #dde5ea;">
                 <tr>
-                  <td class="mobile-body" style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#374151;padding:4px 0 4px 16px;">
-                    &#8226;&nbsp; <a href="{{ hit.url }}" style="color:#0891b2;text-decoration:none;">{{ hit.one_liner }}</a>
-                    <span style="color:#6b7280;font-size:12px;">&mdash; {{ hit.source }}</span>
+                  <td width="4" bgcolor="#0891b2" style="background-color:#0891b2;font-size:1px;line-height:1px;">&nbsp;</td>
+                  <td bgcolor="#f8fafc" style="background-color:#f8fafc;padding:14px 18px;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td>
+                          <a href="{{ hit.url }}" class="mobile-body" style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;color:#1a2332;text-decoration:none;font-weight:600;">{{ hit.one_liner }}</a>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding-top:6px;">
+                          <span style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:bold;color:#5a7d9a;text-transform:uppercase;letter-spacing:0.8px;">{{ hit.source }}</span>&nbsp;&nbsp;&nbsp;<a href="{{ hit.url }}" style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;color:#0891b2;font-weight:bold;">Read &rarr;</a>
+                        </td>
+                      </tr>
+                    </table>
                   </td>
                 </tr>
-                {% endfor %}
               </table>
             </td>
           </tr>
+          {% endfor %}
           {% endif %}
 
-          <!-- ============ FOOTER ============ -->
+          <!-- Spacer before footer -->
           <tr>
-            <td style="padding:32px 32px 0;background-color:#f8f9fa;">
+            <td style="padding-top:32px;font-size:1px;line-height:1px;">&nbsp;</td>
+          </tr>
+
+          <!-- ================================================================
+               FOOTER
+               ================================================================ -->
+          <tr>
+            <td bgcolor="#1a2332" style="background-color:#1a2332;padding:28px 32px 30px;text-align:center;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
-                  <td style="border-top:1px solid #d1d5db;padding-top:20px;padding-bottom:28px;text-align:center;">
-                    <p style="font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.5;color:#9ca3af;margin:0 0 8px;">
-                      Curated by <strong>Digital Procurement News Scout</strong> for PepsiCo Digital Procurement
+                  <td align="center">
+                    <p style="margin:0 0 10px 0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:bold;color:#8a9ab0;letter-spacing:2px;text-transform:uppercase;text-align:center;">
+                      Digital Procurement News Scout &nbsp;&middot;&nbsp; PepsiCo Digital Procurement
                     </p>
-                    <p style="font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.5;color:#9ca3af;margin:0 0 8px;">
-                      Questions or suggestions? <a href="{{ feedback_href }}" style="color:#0891b2;text-decoration:underline;">Share feedback</a>
+                    <p style="margin:0 0 10px 0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:12px;color:#a8bdd4;text-align:center;">
+                      Questions or suggestions?&nbsp;<a href="{{ feedback_href }}" style="color:#4dd8d8;text-decoration:underline;">Share feedback</a>
                     </p>
-                    <p style="font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.5;color:#9ca3af;margin:0;">
-                      {{ date }} &middot; Issue #{{ issue_number }}
+                    <p style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;color:#6b8099;letter-spacing:0.3px;text-align:center;">
+                      {{ date }}&nbsp;&middot;&nbsp;Issue #{{ issue_number }}
                     </p>
                   </td>
                 </tr>
@@ -262,6 +363,9 @@
 
         </table>
         <!-- /Email container -->
+        <!--[if mso]>
+        </td></tr></table>
+        <![endif]-->
 
       </td>
     </tr>

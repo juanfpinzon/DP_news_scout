@@ -95,7 +95,12 @@ dpns/
 
 ### LLM Usage
 - **Two-pass LLM pipeline**: first call scores relevance (batch of ~10 articles → JSON scores), second call composes the full digest (top ~15 articles → structured JSON output).
-- **Provider: OpenRouter** — all LLM calls go through OpenRouter using the `openai` SDK with `base_url="https://openrouter.ai/api/v1"`. Default model is `anthropic/claude-sonnet-4-6` but can be swapped to any OpenRouter-supported model via `config/settings.yaml` with no code change.
+- **Provider: OpenRouter** — all LLM calls go through OpenRouter using the `openai` SDK with `base_url="https://openrouter.ai/api/v1"`.
+- **Stage-specific defaults**:
+  - relevance scoring: `anthropic/claude-haiku-4.5`
+  - digest composition: `anthropic/claude-sonnet-4-6`
+  - shared fallback: `anthropic/claude-haiku-4.5`
+- Legacy `llm_model` / `LLM_MODEL` is still supported as a compatibility alias and will populate both stages if stage-specific settings are absent.
 - All prompts live in `/prompts/` as Markdown files — editable by non-developers without touching code.
 - System prompt always includes `context_preamble.md` which encodes PepsiCo Digital Procurement context.
 
@@ -107,7 +112,7 @@ dpns/
 
 ### Email Design
 - Current desktop max width: 880px, table-based layout for Outlook compatibility.
-- Color palette: navy header `#1a2744`, teal accent `#0891b2`, light gray cards `#f8f9fa`.
+- Color palette: deep navy header/footer `#1a2332`, teal accent `#0891b2`, teal-green support `#2d8b8b`, with tinted section cards (`#f0f9fb`, `#f1faee`) and outer background `#cdd4db`.
 - Digest structure: Top Story → Key Developments → On Our Radar → Quick Hits → Footer.
 - CSS inlined via `premailer` for broad email client compatibility.
 
@@ -121,6 +126,9 @@ dpns/
 
 - `max_digest_items: 15`
 - `max_digest_items_per_source: 3`
+- `llm_scoring_model: anthropic/claude-haiku-4.5`
+- `llm_digest_model: anthropic/claude-sonnet-4-6`
+- `llm_model_fallback: anthropic/claude-haiku-4.5`
 - `dedup_window_days: 7`
 - `email_max_width_px: 880`
 - `issue_number_override: 0`
@@ -151,6 +159,9 @@ EMAIL_FROM=news-scout@yourdomain.com
 LOG_LEVEL=INFO          # DEBUG for local dev
 DRY_RUN=false           # Set true to skip sending
 PIPELINE_TIMEOUT=600    # Max pipeline runtime (seconds)
+LLM_SCORING_MODEL=anthropic/claude-haiku-4.5
+LLM_DIGEST_MODEL=anthropic/claude-sonnet-4-6
+LLM_MODEL_FALLBACK=anthropic/claude-haiku-4.5
 MAX_DIGEST_ITEMS=15
 MAX_DIGEST_ITEMS_PER_SOURCE=3
 EMAIL_MAX_WIDTH_PX=880
@@ -225,6 +236,11 @@ This repository now has three distinct testing behaviors that matter for repeate
    Command: `python scripts/run_manual.py --dry-run --reuse-seen-db`
    Behavior:
    Skips network fetch completely and reuses stored articles from `data/dpns.db`. This is the most repeatable option for testing layout, prompt changes, or send behavior without hitting sources again. It fails if the `articles` table is empty.
+
+Model validation note:
+
+- `python scripts/run_manual.py --dry-run --reuse-seen-db` is the recommended repeatable check after changing analyzer models.
+- Confirm in `data/logs/dpns.jsonl` that relevance batches request the scoring model and digest composition requests the digest model.
 
 Special note:
 

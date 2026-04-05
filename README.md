@@ -3,8 +3,8 @@
 Digital Procurement News Scout (DPNS) is a daily procurement and digital transformation digest that:
 
 - fetches articles from RSS and approved scrape sources,
-- scores relevance with Claude via OpenRouter,
-- composes an executive briefing,
+- scores relevance with a lower-cost Claude model via OpenRouter,
+- composes the executive briefing with Sonnet via OpenRouter,
 - renders HTML and plain-text email output,
 - sends the digest through AgentMail.
 
@@ -70,6 +70,9 @@ Current notable settings:
 ```yaml
 max_digest_items: 15
 max_digest_items_per_source: 3
+llm_scoring_model: anthropic/claude-haiku-4.5
+llm_digest_model: anthropic/claude-sonnet-4-6
+llm_model_fallback: anthropic/claude-haiku-4.5
 dedup_window_days: 7
 email_max_width_px: 880
 issue_number_override: 0
@@ -79,9 +82,18 @@ Meaning:
 
 - `max_digest_items`: total article slots passed into digest composition.
 - `max_digest_items_per_source`: soft per-source cap before the selector fills remaining slots.
+- `llm_scoring_model`: primary model used for batched relevance scoring.
+- `llm_digest_model`: primary model used for final digest composition.
+- `llm_model_fallback`: shared fallback model used by both analyzer stages on retry/fallback conditions.
 - `dedup_window_days`: recent URL dedup window against SQLite.
 - `email_max_width_px`: desktop max width for the HTML digest.
 - `issue_number_override`: when set, overrides dynamic issue numbering. Remove it or set it to `null` to restore dynamic numbering later.
+
+Legacy compatibility:
+
+- Older configs can still provide `llm_model` or `LLM_MODEL`.
+- If stage-specific settings are absent, that legacy value is used for both scoring and digest composition.
+- If stage-specific settings are present, they override the legacy single-model alias.
 
 Environment variables can also override settings. Relevant optional overrides include:
 
@@ -90,9 +102,25 @@ DRY_RUN=false
 PIPELINE_TIMEOUT=600
 MAX_DIGEST_ITEMS=15
 MAX_DIGEST_ITEMS_PER_SOURCE=3
+LLM_SCORING_MODEL=anthropic/claude-haiku-4.5
+LLM_DIGEST_MODEL=anthropic/claude-sonnet-4-6
+LLM_MODEL_FALLBACK=anthropic/claude-haiku-4.5
 EMAIL_MAX_WIDTH_PX=880
 ISSUE_NUMBER_OVERRIDE=0
 ```
+
+## LLM Model Split
+
+The analyzer is now intentionally split by task:
+
+- Relevance scoring uses `llm_scoring_model` and defaults to `anthropic/claude-haiku-4.5`.
+- Digest composition uses `llm_digest_model` and defaults to `anthropic/claude-sonnet-4-6`.
+- Both stages share `llm_model_fallback`.
+
+This is the default cost-optimization path:
+
+- scoring is the high-call-volume, lower-complexity stage,
+- composition is the lower-volume, quality-sensitive stage.
 
 ## Manual Run Modes
 
@@ -216,6 +244,17 @@ Use this when:
 - you want repeatable previews from a known stored set,
 - you want to test template/send changes without fetching new content,
 - you want to resend from the current DB state.
+
+Recommended validation flow for model changes:
+
+```bash
+python scripts/run_manual.py --dry-run --reuse-seen-db
+```
+
+In `data/logs/dpns.jsonl`, verify:
+
+- relevance batches log `requested_model=anthropic/claude-haiku-4.5`
+- digest composition logs `requested_model=anthropic/claude-sonnet-4-6`
 
 ### Sources only
 

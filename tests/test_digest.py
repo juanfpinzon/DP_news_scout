@@ -56,8 +56,9 @@ def build_settings() -> Settings:
         relevance_threshold=6,
         digest_send_time="09:00",
         timezone="Central European Time",
-        llm_model="anthropic/claude-sonnet-4-6",
-        llm_model_fallback="anthropic/claude-4-5-haiku",
+        llm_scoring_model="anthropic/claude-haiku-4.5",
+        llm_digest_model="anthropic/claude-sonnet-4-6",
+        llm_model_fallback="anthropic/claude-haiku-4.5",
         database_path="data/test.db",
         log_level="INFO",
         log_file="data/logs/test.jsonl",
@@ -450,6 +451,164 @@ def test_compose_digest_retries_after_invalid_json_response() -> None:
     assert any(event == "digest_composition_retrying_invalid_payload" for event, _payload in logger.records)
 
 
+def test_compose_digest_recovers_unique_truncated_article_url() -> None:
+    article = build_article(1, 10)
+    article.url = "https://conference.dpw.ai/speakers/paul-polman-2"
+    article.source = "Digital Procurement World"
+    other_article = build_article(2, 9)
+    llm_client = FakeLLMClient(
+        [
+            """
+            {
+              "top_story": {
+                "url": "https://example.com/article-2",
+                "headline": "Top headline",
+                "summary": "Top summary.",
+                "why_it_matters": "Top implication.",
+                "source": "Source 2",
+                "date": "2026-04-02"
+              },
+              "key_developments": [],
+              "on_our_radar": [],
+              "quick_hits": [
+                {
+                  "url": "https://conference",
+                  "one_liner": "Quick takeaway.",
+                  "source": "Digital Procurement World"
+                }
+              ]
+            }
+            """,
+            """
+            {
+              "top_story": {
+                "url": "https://example.com/article-2",
+                "headline": "Top headline",
+                "summary": "Top summary.",
+                "why_it_matters": "Top implication.",
+                "source": "Source 2",
+                "date": "2026-04-02"
+              },
+              "key_developments": [],
+              "on_our_radar": [],
+              "quick_hits": []
+            }
+            """,
+        ]
+    )
+
+    async def run() -> Digest:
+        return await compose_digest(
+            [article, other_article],
+            llm_client=llm_client,
+            settings=build_settings(),
+        )
+
+    digest = asyncio.run(run())
+
+    assert digest.quick_hits[0].url == "https://conference.dpw.ai/speakers/paul-polman-2"
+
+
+def test_compose_digest_retries_instead_of_coercing_longer_hallucinated_url() -> None:
+    articles = [build_article(1, 10), build_article(2, 9)]
+    llm_client = FakeLLMClient(
+        [
+            """
+            {
+              "top_story": {
+                "url": "https://example.com/article-10",
+                "headline": "Top headline",
+                "summary": "Top summary.",
+                "why_it_matters": "Top implication.",
+                "source": "Source 1",
+                "date": "2026-04-01"
+              },
+              "key_developments": [],
+              "on_our_radar": [],
+              "quick_hits": []
+            }
+            """,
+            """
+            {
+              "top_story": {
+                "url": "https://example.com/article-1",
+                "headline": "Top headline",
+                "summary": "Top summary.",
+                "why_it_matters": "Top implication.",
+                "source": "Source 1",
+                "date": "2026-04-01"
+              },
+              "key_developments": [],
+              "on_our_radar": [],
+              "quick_hits": []
+            }
+            """,
+        ]
+    )
+    logger = DummyLogger()
+
+    async def run() -> Digest:
+        return await compose_digest(
+            articles,
+            llm_client=llm_client,
+            settings=build_settings(),
+            logger=logger,
+        )
+
+    digest = asyncio.run(run())
+
+    assert digest.top_story.url == "https://example.com/article-1"
+    assert len(llm_client.calls) == 2
+    assert any(
+        event == "digest_composition_retrying_invalid_payload"
+        and "unknown article URL" in str(payload.get("error", ""))
+        for event, payload in logger.records
+    )
+
+
+def test_compose_digest_derives_quick_hit_one_liner_from_article_summary() -> None:
+    article = build_article(1, 10)
+    article.summary = "A concise summary for the quick hit. Extra detail that should be dropped."
+    llm_client = FakeLLMClient(
+        [
+            """
+            {
+              "top_story": {
+                "url": "https://example.com/article-1",
+                "headline": "Top headline",
+                "summary": "Top summary.",
+                "why_it_matters": "Top implication.",
+                "source": "Source 1",
+                "date": "2026-04-01"
+              },
+              "key_developments": [],
+              "on_our_radar": [],
+              "quick_hits": [
+                {
+                  "url": "https://example.com/article-2",
+                  "one_liner": {"text": "not a string"},
+                  "source": "Source 2"
+                }
+              ]
+            }
+            """,
+        ]
+    )
+    second_article = build_article(2, 9)
+    second_article.summary = "A concise summary for the quick hit. Extra detail that should be dropped."
+
+    async def run() -> Digest:
+        return await compose_digest(
+            [article, second_article],
+            llm_client=llm_client,
+            settings=build_settings(),
+        )
+
+    digest = asyncio.run(run())
+
+    assert digest.quick_hits[0].one_liner == "A concise summary for the quick hit."
+
+
 def test_select_articles_balances_sources_before_filling_limit() -> None:
     articles = [
         build_article(1, 10),
@@ -498,3 +657,93 @@ def test_select_articles_can_fill_past_source_cap_when_needed() -> None:
 
     assert len(selected) == 4
     assert counts == {"Source A": 3, "Source B": 1}
+
+
+def test_compose_digest_uses_digest_model_when_instantiating_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class CapturingLLMClient:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+        async def complete(
+            self,
+            system_prompt: str,
+            user_prompt: str,
+            max_tokens: int,
+            response_format: dict[str, object] | None = None,
+            extra_body: dict[str, object] | None = None,
+        ) -> str:
+            return """
+            {
+              "top_story": {
+                "url": "https://example.com/article-1",
+                "headline": "Top headline",
+                "summary": "Top summary.",
+                "why_it_matters": "Top implication.",
+                "source": "Source 1",
+                "date": "2026-04-01"
+              },
+              "key_developments": [],
+              "on_our_radar": [],
+              "quick_hits": []
+            }
+            """
+
+        async def aclose(self) -> None:
+            return None
+
+    monkeypatch.setattr("src.analyzer.digest.LLMClient", CapturingLLMClient)
+
+    async def run() -> Digest:
+        return await compose_digest([build_article(1, 10)], settings=build_settings())
+
+    digest = asyncio.run(run())
+
+    assert digest.top_story.url == "https://example.com/article-1"
+    assert captured["primary_model"] == "anthropic/claude-sonnet-4-6"
+
+
+def test_compose_digest_uses_digest_model_when_supplied_client_supports_override() -> None:
+    class OverrideableLLMClient(FakeLLMClient):
+        def __init__(self, responses: list[str]) -> None:
+            super().__init__(responses)
+            self.requested_primary_models: list[str] = []
+
+        def with_primary_model(self, primary_model: str) -> OverrideableLLMClient:
+            self.requested_primary_models.append(primary_model)
+            return self
+
+    llm_client = OverrideableLLMClient(
+        [
+            """
+            {
+              "top_story": {
+                "url": "https://example.com/article-1",
+                "headline": "Top headline",
+                "summary": "Top summary.",
+                "why_it_matters": "Top implication.",
+                "source": "Source 1",
+                "date": "2026-04-01"
+              },
+              "key_developments": [],
+              "on_our_radar": [],
+              "quick_hits": []
+            }
+            """
+        ]
+    )
+
+    async def run() -> Digest:
+        return await compose_digest(
+            [build_article(1, 10)],
+            llm_client=llm_client,
+            settings=build_settings(),
+        )
+
+    digest = asyncio.run(run())
+
+    assert digest.top_story.url == "https://example.com/article-1"
+    assert llm_client.requested_primary_models == ["anthropic/claude-sonnet-4-6"]

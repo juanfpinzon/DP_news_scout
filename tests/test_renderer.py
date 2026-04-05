@@ -141,14 +141,14 @@ class TestRenderDigest:
         html = render_digest(_make_full_digest(), issue_number=1, date="April 4, 2026")
         # premailer should inline background-color on the body tag
         assert 'style=' in html
-        # The navy header color should appear inline
-        assert "#1a2744" in html
+        # The current deep navy header color should appear inline
+        assert "#1a2332" in html
 
     def test_header_counts_unique_sources(self) -> None:
         html = render_digest(_make_duplicate_source_digest(), issue_number=1, date="April 4, 2026")
         assert "3 sources" in html
 
-    def test_primary_article_links_use_teal_color(self) -> None:
+    def test_primary_article_links_use_dark_headline_color(self) -> None:
         html = render_digest(_make_full_digest(), issue_number=1, date="April 4, 2026")
         for url in (
             "https://example.com/article-1",
@@ -157,13 +157,13 @@ class TestRenderDigest:
         ):
             link_idx = html.index(url)
             link_html = html[max(0, link_idx - 120): link_idx + 180]
-            assert "color:#0891b2" in link_html
+            assert "color:#1a2332" in link_html
 
-    def test_mobile_body_copy_has_explicit_16px_rule(self) -> None:
+    def test_mobile_body_copy_has_explicit_15px_rule(self) -> None:
         html = render_digest(_make_full_digest(), issue_number=1, date="April 4, 2026")
         assert "class=\"mobile-body\"" in html
         assert ".mobile-body" in html
-        assert "font-size: 16px;" in html
+        assert "font-size: 15px;" in html
 
     def test_desktop_container_width_is_configurable(self) -> None:
         html = render_digest(
