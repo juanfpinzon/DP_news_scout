@@ -73,6 +73,7 @@ Important current behavior:
 - Inactive sources can participate as fallback-only sources through `fallback_search.include_when_inactive: true`.
 - Search fallback accepts only allowlisted publisher domains from `config/search_fallback_allowlist.yaml`, rejects common low-trust/user-generated domains, and re-checks `robots.txt` on the candidate publisher before fetching the article page.
 - Fallback articles keep the actual publisher name as `source` and store `origin_source` plus `discovery_method=search_fallback` internally for audit/debugging.
+- Fetch progress now emits a per-source fallback summary such as `Brave returned 10 results; 8 blocked by allowlist; 2 stale.` so zero-result fallbacks are easier to diagnose from run logs alone.
 
 ## Configuration
 
@@ -145,11 +146,22 @@ Search fallback is config-driven:
 - `config/sources.yaml` can add a `fallback_search` block per source with `enabled`, `include_when_inactive`, `query`, and `max_results`.
 - Active sources fall back automatically when the global switch is on unless a source explicitly sets `fallback_search.enabled: false`.
 - Inactive sources only run through search when `fallback_search.enabled: true` and `include_when_inactive: true`.
-- `config/search_fallback_allowlist.yaml` is the editable allowlist/denylist for accepted fallback publishers.
+- `config/search_fallback_allowlist.yaml` is the editable allowlist/denylist for accepted fallback publishers, with additional trusted trade-media seeds layered on top of the auto-included active DPNS `trade_media` and `mainstream` domains.
+
+Operator guidance:
+
+- Use `fallback_search.query` for ambiguous brands or vendor names where the default query of `"Source Name"` is too weak.
+- The current tuned query set covers `SAP Ariba`, `Archlet`, `Keelvar`, `SpendHQ`, `GEP`, `Zip`, `Sievo`, `Digital Procurement World`, and `Mars Newsroom`.
+- If a fallback source still returns `0` articles, inspect the new summary line in the fetch log first. The most common reasons are:
+  - `blocked by allowlist`: Brave found articles, but the publisher domain is not currently trusted.
+  - `stale`: the article was outside the current `rss_lookback_hours` window.
+  - `article fetch failed` or `blocked by robots.txt`: the candidate publisher page could not be fetched compliantly.
+- Expand `config/search_fallback_allowlist.yaml` only with editorial publishers you are comfortable treating as trusted input to the digest.
 
 Current notable example:
 
 - `SAP Ariba` remains uncrawlable directly because `news.sap.com` blocks generic crawlers, but it now runs as a fallback-only source using Brave plus the allowlist gate.
+- Recent trade-media allowlist additions include `globaltrademag.com`, `dcvelocity.com`, `thescxchange.com`, and `cpostrategy.media`.
 
 ## LLM Model Split
 

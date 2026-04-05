@@ -1,19 +1,22 @@
 ## Search Fallback For Blocked Or Empty Sources
 
 ### Status
-Implemented on April 5, 2026.
+Implemented on April 5, 2026, with tuning follow-ups on April 6, 2026.
 
 Current shipped behavior:
 - active sources use Brave fallback after direct fetch failure or direct `0 article` runs when `search_fallback_enabled` is on,
 - inactive sources can run as fallback-only via `fallback_search.include_when_inactive: true`,
 - accepted fallback publishers come from `config/search_fallback_allowlist.yaml`,
 - fallback candidates are re-checked against their own `robots.txt`,
-- persisted articles now keep `origin_source` and `discovery_method`.
+- persisted articles now keep `origin_source` and `discovery_method`,
+- per-source `fallback_search.query` overrides are available and currently tuned for several ambiguous vendor/community sources,
+- fetch progress now includes a fallback summary line that explains zero-result runs with counts for allowlist blocks, stale hits, robots blocks, and candidate fetch failures.
 
-Latest live verification on April 5, 2026:
+Latest live verification on April 6, 2026:
 - `python scripts/run_manual.py --sources-only` completed with `16/16` sources succeeded,
 - SAP Ariba now succeeds on the fallback-only path,
-- the current SAP Ariba query returned `0` allowlisted articles in the live window, so the source contributes coverage only when reputable third-party reporting is available.
+- `SpendHQ` returned `1` accepted article via search fallback in the active live window,
+- several other fallback-capable sources still returned `0` articles, but now expose actionable reasons in logs such as `blocked by allowlist`, `stale`, `blocked by robots.txt`, and `article fetch failed`.
 
 ### Summary
 Add a new **Brave Search-backed fallback ingestion mode** so DPNS can recover coverage for sources that:
@@ -59,6 +62,7 @@ Fallback articles must come only from a **strict, editable allowlist** of truste
     - `publishers`: `{domain, label, group, active}`
     - `deny_domains`
   - Use this config as the single source of truth so the list can be tuned without code changes.
+  - Initial follow-up expansion added `globaltrademag.com`, `dcvelocity.com`, `thescxchange.com`, and `cpostrategy.media` after observing repeated reputable-but-unallowlisted fallback candidates in live runs.
 
 - Keep the quality gate strict.
   - Accept only article URLs whose publisher domain is in the allowlist.
@@ -85,6 +89,19 @@ Fallback articles must come only from a **strict, editable allowlist** of truste
   - Direct failure + fallback error = source counted as failed.
   - Direct success with `0` articles + fallback success/empty/error = source counted as succeeded, because the primary source was reachable; fallback failure is logged as enrichment failure only.
   - Fallback-only source + fallback error = source counted as failed.
+
+- Add operator-facing diagnostics for fallback outcomes.
+  - Emit a structured summary event after each fallback run.
+  - Surface the same summary in progress output so GitHub Actions and local `--sources-only` runs explain why a fallback ended with `0` accepted articles.
+  - Track at least:
+    - Brave results returned
+    - accepted articles
+    - blocked by allowlist
+    - blocked by original source domain
+    - blocked by candidate robots.txt
+    - candidate fetch failures
+    - stale candidates
+    - missing-title candidates
 
 ### Initial Allowlist Seeds
 Seed the allowlist with these groups, all editable later in `config/search_fallback_allowlist.yaml`.

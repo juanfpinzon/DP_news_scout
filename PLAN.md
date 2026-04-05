@@ -174,6 +174,8 @@ REVISION COMPLETED (2026-04-04):
     Procurement Leaders (paywall).
   - Result at that stage: 15 directly fetched active sources after SAP Ariba direct deactivation; remaining active sources passed validation.
   - Follow-up on 2026-04-05: implemented Brave-backed search fallback with an allowlist gate, reintroduced SAP Ariba as a fallback-only source, and restored the active configured set to 16 sources total.
+  - Follow-up on 2026-04-06: tuned `fallback_search.query` overrides for ambiguous vendor/community sources, expanded the trusted trade-media allowlist, and added per-source fallback diagnostics to explain zero-result runs (`allowlist`, `stale`, `robots`, `fetch failed`, etc.).
+  - Latest live fetch verification on 2026-04-06: `python scripts/run_manual.py --sources-only` completed with `16/16` sources succeeded, and `SpendHQ` returned `1` accepted article via search fallback in the active 7-day window.
 ```
 
 **Task 2.1.2: RSS feed parser** ✅

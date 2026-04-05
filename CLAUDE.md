@@ -118,6 +118,9 @@ dpns/
 - Inactive sources can be reintroduced as fallback-only with `fallback_search.enabled: true` and `fallback_search.include_when_inactive: true`.
 - Search fallback only accepts publishers from `config/search_fallback_allowlist.yaml`, rejects denylisted/user-generated domains, and re-checks candidate-site robots before fetching article metadata.
 - Fallback articles persist `origin_source` and `discovery_method=search_fallback` while keeping the actual publisher as `source`.
+- Search fallback now emits a per-source summary in progress/log output, including counts such as Brave results returned, allowlist blocks, stale candidates, robots blocks, and candidate fetch failures.
+- Per-source `fallback_search.query` overrides are the main tuning lever for ambiguous brands; the current tuned set includes SAP Ariba, Archlet, Keelvar, SpendHQ, GEP, Zip, Sievo, Digital Procurement World, and Mars Newsroom.
+- `config/search_fallback_allowlist.yaml` remains operator-editable and now includes additional trusted trade-media seeds such as `globaltrademag.com`, `dcvelocity.com`, `thescxchange.com`, and `cpostrategy.media`.
 
 ### Email Design
 - Current desktop max width: 880px, table-based layout for Outlook compatibility.
