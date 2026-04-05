@@ -641,7 +641,7 @@ AGENTMAIL_INBOX_ID=...          # ⚠️  Must be provided by user at setup
 EMAIL_FROM=news-scout@yourdomain.com
 
 # Optional
-LOG_LEVEL=DEBUG
+LOG_LEVEL=INFO
 DRY_RUN=false
 PIPELINE_TIMEOUT=600
 ```

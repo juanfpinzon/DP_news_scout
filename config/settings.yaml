@@ -8,7 +8,7 @@ llm_scoring_model: "anthropic/claude-haiku-4.5"
 llm_digest_model: "anthropic/claude-sonnet-4-6"
 llm_model_fallback: "anthropic/claude-haiku-4.5"
 database_path: "data/dpns.db"
-log_level: "DEBUG"
+log_level: "INFO"
 log_file: "data/logs/dpns.jsonl"
 dry_run: false
 pipeline_timeout: 600
