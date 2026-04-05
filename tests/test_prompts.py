@@ -51,6 +51,7 @@ def test_relevance_scoring_prompt_includes_rubric_and_json_contract() -> None:
     assert '"reasoning"' in prompt
     assert "Direct procurement technology" in prompt
     assert "Competitive intelligence" in prompt
+    assert "Current-week launches" in prompt
 
 
 def test_digest_composition_prompt_includes_voice_and_json_contract() -> None:
@@ -66,3 +67,4 @@ def test_digest_composition_prompt_includes_voice_and_json_contract() -> None:
     assert "why_it_matters" in prompt
     assert "one_liner" in prompt
     assert "url may appear only once" in normalized
+    assert "current week" in normalized

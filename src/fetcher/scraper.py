@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
@@ -26,7 +27,9 @@ FALLBACK_ARTICLE_SELECTOR = (
 )
 FALLBACK_TITLE_SELECTOR = "h1, h2, h3, h4, .title, .card-title, .summary-item__title"
 FALLBACK_LINK_SELECTOR = "a[href]"
-FALLBACK_DATE_SELECTOR = "time, .date, .published, .post-date, .timestamp, .news-date"
+FALLBACK_DATE_SELECTOR = (
+    "time, .date, .published, .post-date, .timestamp, .news-date, .carddate, .blogdate"
+)
 FALLBACK_SUMMARY_SELECTOR = "p, .excerpt, .summary, .description"
 FALLBACK_AUTHOR_SELECTOR = (
     ".author, .authors, .byline, [rel='author'], [itemprop='author'], .cmp-teaser__author"
@@ -58,6 +61,20 @@ JAVASCRIPT_BOOTSTRAP_MARKERS = (
     "__INITIAL_STATE__",
     "__PRELOADED_STATE__",
     "webpackChunk",
+)
+DETAIL_META_DATE_SELECTORS = (
+    "meta[property='article:published_time']",
+    "meta[name='article:published_time']",
+    "meta[property='og:published_time']",
+    "meta[name='parsely-pub-date']",
+    "meta[name='pubdate']",
+)
+DETAIL_VISIBLE_DATE_SELECTORS = (
+    "time[datetime]",
+    "time",
+    "[itemprop='datePublished']",
+    ".blogdate",
+    ".carddate",
 )
 
 
@@ -120,6 +137,16 @@ async def scrape_source(
         lookback_hours=lookback_hours,
         max_articles=max_articles,
     )
+    articles = await _recover_missing_dates(
+        articles=articles,
+        source=source,
+        client=active_client,
+        now=active_now,
+        lookback_hours=lookback_hours,
+        max_articles=max_articles,
+        rate_limiter=rate_limiter,
+        robots_policy=robots_policy,
+    )
     if articles:
         return articles
 
@@ -129,6 +156,16 @@ async def scrape_source(
         now=active_now,
         lookback_hours=lookback_hours,
         max_articles=max_articles,
+    )
+    fallback_articles = await _recover_missing_dates(
+        articles=fallback_articles,
+        source=source,
+        client=active_client,
+        now=active_now,
+        lookback_hours=lookback_hours,
+        max_articles=max_articles,
+        rate_limiter=rate_limiter,
+        robots_policy=robots_policy,
     )
     if fallback_articles:
         return fallback_articles
@@ -249,6 +286,138 @@ def _fallback_anchor_scan(
             break
 
     return articles
+
+
+async def _recover_missing_dates(
+    *,
+    articles: list[RawArticle],
+    source: Source,
+    client: httpx.AsyncClient,
+    now: datetime,
+    lookback_hours: int,
+    max_articles: int,
+    rate_limiter: DomainRateLimiter | None,
+    robots_policy: RobotsPolicy | None,
+) -> list[RawArticle]:
+    for article in articles:
+        if article.published_at:
+            continue
+        recovered = await _fetch_article_published_at(
+            article_url=article.url,
+            source=source,
+            client=client,
+            rate_limiter=rate_limiter,
+            robots_policy=robots_policy,
+        )
+        if recovered is not None:
+            article.published_at = recovered.isoformat()
+
+    filtered = [
+        article
+        for article in articles
+        if is_recent_enough(
+            parse_datetime(article.published_at),
+            now=now,
+            lookback_hours=lookback_hours,
+        )
+    ]
+    filtered.sort(key=_article_sort_key, reverse=True)
+    return filtered[:max_articles]
+
+
+async def _fetch_article_published_at(
+    *,
+    article_url: str,
+    source: Source,
+    client: httpx.AsyncClient,
+    rate_limiter: DomainRateLimiter | None,
+    robots_policy: RobotsPolicy | None,
+) -> datetime | None:
+    headers = build_request_headers(source.name, article_url)
+    if robots_policy is not None:
+        allowed = await robots_policy.allows(
+            client=client,
+            url=article_url,
+            user_agent=headers["User-Agent"],
+        )
+        if not allowed:
+            return None
+
+    if rate_limiter is not None:
+        await rate_limiter.wait(article_url)
+
+    try:
+        response = await client.get(article_url, headers=headers)
+        response.raise_for_status()
+    except httpx.HTTPError:
+        return None
+
+    return _extract_document_date(BeautifulSoup(response.text, "html.parser"))
+
+
+def _extract_document_date(document: BeautifulSoup) -> datetime | None:
+    for selector in DETAIL_META_DATE_SELECTORS:
+        node = document.select_one(selector)
+        if node is None:
+            continue
+        parsed = parse_datetime(node.get("content") or node.get("datetime"))
+        if parsed is not None:
+            return parsed
+
+    for node in document.select("script[type='application/ld+json']"):
+        parsed = _extract_json_ld_date(node.string or node.get_text(" ", strip=True))
+        if parsed is not None:
+            return parsed
+
+    for selector in DETAIL_VISIBLE_DATE_SELECTORS:
+        node = document.select_one(selector)
+        if node is None:
+            continue
+        parsed = parse_datetime(
+            node.get("datetime") or node.get("content") or node.get_text(" ", strip=True)
+        )
+        if parsed is not None:
+            return parsed
+
+    return None
+
+
+def _extract_json_ld_date(raw_json: str | None) -> datetime | None:
+    if not raw_json:
+        return None
+
+    try:
+        payload = json.loads(raw_json)
+    except json.JSONDecodeError:
+        return None
+
+    return _walk_json_ld_for_date(payload)
+
+
+def _walk_json_ld_for_date(value: object) -> datetime | None:
+    if isinstance(value, dict):
+        for key in ("datePublished", "dateCreated", "uploadDate"):
+            parsed = parse_datetime(value.get(key))
+            if parsed is not None:
+                return parsed
+        for nested in value.values():
+            parsed = _walk_json_ld_for_date(nested)
+            if parsed is not None:
+                return parsed
+        return None
+
+    if isinstance(value, list):
+        for item in value:
+            parsed = _walk_json_ld_for_date(item)
+            if parsed is not None:
+                return parsed
+
+    return None
+
+
+def _article_sort_key(article: RawArticle) -> tuple[str, str]:
+    published = article.published_at or ""
+    return (published, article.url)
 
 
 def _extract_text(container: Tag, selector: str) -> str | None:

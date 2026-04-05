@@ -3,25 +3,25 @@ selector_presets:
     article: "article, .post, .card, .resource-item, .listing-item, .teaser, .summary-item"
     title: "h1, h2, h3, h4, .title, .card-title, .teaser__title, .summary-item__title"
     link: "a[href]"
-    date: "time, .date, .published, .post-date, .timestamp, .summary-item__date"
+    date: "time, .date, .published, .post-date, .timestamp, .summary-item__date, .carddate, .blogdate"
     summary: "p, .excerpt, .summary, .description, .teaser__excerpt"
   resource_scrape: &resource_scrape
     article: "article, .resource-item, .resource-card, .listing-item, .card, li"
     title: "h1, h2, h3, h4, .title, .card-title, .resource-card__title"
     link: "a[href]"
-    date: "time, .date, .published, .post-date"
+    date: "time, .date, .published, .post-date, .carddate, .blogdate"
     summary: "p, .excerpt, .summary, .description"
   newsroom_scrape: &newsroom_scrape
     article: "article, .post, .news-item, .story-card, .cmp-teaser, .card"
     title: "h1, h2, h3, h4, .title, .card-title, .cmp-teaser__title"
     link: "a[href]"
-    date: "time, .date, .published, .post-date, .news-date"
+    date: "time, .date, .published, .post-date, .news-date, .carddate, .blogdate"
     summary: "p, .excerpt, .summary, .description, .cmp-teaser__description"
   webflow_scrape: &webflow_scrape
     article: ".w-dyn-item"
     title: "h1, h2, h3, h4, h5, h6"
     link: "a[href]"
-    date: "time, .date, .published, .post-date"
+    date: "time, .date, .published, .post-date, .carddate, .blogdate"
     summary: "p, .excerpt, .summary, .description"
 
 sources:
@@ -91,7 +91,7 @@ sources:
       article: "._12col-grid.is-resources .w-dyn-item, .resources-hero_coll-list .w-dyn-item"
       title: "h1, h2, h3, h4, h5, h6"
       link: "a[href]"
-      date: "time, .date, .published"
+      date: ".resources_item-details-wrapper .eyebrow-text:last-child, time, .date, .published"
       summary: "p, .excerpt, .summary, .description"
     # Webflow site — custom selectors to avoid matching navbar w-dyn-items
 
@@ -105,7 +105,7 @@ sources:
       article: ".postcollectionitem"
       title: "h1, h2, h3, h4, h5, h6"
       link: "a[href]"
-      date: "time, .date, .published, .post-date"
+      date: "time, .date, .published, .post-date, .carddate, .blogdate"
       summary: "p, .excerpt, .summary, .description"
     # Webflow site — uses .postcollectionitem containers
 

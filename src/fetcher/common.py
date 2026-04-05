@@ -93,7 +93,14 @@ def parse_datetime(value: str | datetime | None) -> datetime | None:
     except (TypeError, ValueError):
         pass
 
-    for fmt in ("%Y-%m-%d", "%d %B %Y", "%b %d, %Y", "%B %d, %Y"):
+    for fmt in (
+        "%Y-%m-%d",
+        "%d %B %Y",
+        "%b %d, %Y",
+        "%B %d, %Y",
+        "%d.%m.%y",
+        "%d.%m.%Y",
+    ):
         try:
             return _as_utc(datetime.strptime(text, fmt))
         except ValueError:

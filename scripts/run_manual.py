@@ -313,6 +313,8 @@ async def _render_live_digest(
         raw_articles = load_raw_articles_from_storage(
             database_path=config.settings.database_path,
             sources=sources,
+            settings=config.settings,
+            now=now,
         )
         fetch_summary = FetchSummary(
             articles=raw_articles,
@@ -377,6 +379,7 @@ async def _render_live_digest(
             settings=config.settings,
             logger=get_logger(__name__, pipeline_stage="analyzer"),
             progress_callback=progress_callback,
+            now=now,
         )
 
         if not scored_articles:
@@ -419,6 +422,7 @@ async def _render_live_digest(
             settings=config.settings,
             logger=get_logger(__name__, pipeline_stage="analyzer"),
             progress_callback=progress_callback,
+            now=now,
         )
 
     if persist_articles:
