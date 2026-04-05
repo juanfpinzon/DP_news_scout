@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -23,7 +24,7 @@ from src.storage.db import (
 )
 from src.utils.config import AppConfig, load_config
 from src.utils.logging import configure_logging, get_logger
-from src.utils.progress import emit_progress
+from src.utils.progress import build_stdout_progress_callback, emit_progress
 
 DEFAULT_SUBJECT_PREFIX = "Digital Procurement News Scout"
 
@@ -882,9 +883,28 @@ def _pluralize(count: int, singular: str, plural: str | None = None) -> str:
 def main() -> None:
     config = load_config()
     configure_logging(config)
-    result = run_pipeline(config=config)
+    progress_callback = (
+        build_stdout_progress_callback()
+        if _should_emit_stdout_progress()
+        else None
+    )
+    if progress_callback is not None:
+        emit_progress(
+            progress_callback,
+            "Starting pipeline run "
+            f"(dry_run={config.settings.dry_run}).",
+        )
+        emit_progress(
+            progress_callback,
+            f"Using database {config.settings.database_path} and log file {config.settings.log_file}.",
+        )
+    result = run_pipeline(config=config, progress_callback=progress_callback)
     if result.status != "success":
         raise SystemExit(1)
+
+
+def _should_emit_stdout_progress() -> bool:
+    return os.getenv("GITHUB_ACTIONS", "").strip().lower() == "true"
 
 
 if __name__ == "__main__":
