@@ -41,11 +41,12 @@ def test_main_dry_run_overrides_pipeline_config(
         lambda: datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
     )
 
-    def fake_run_pipeline(*, config, now, ignore_seen_db, reuse_seen_db):
+    def fake_run_pipeline(*, config, now, ignore_seen_db, reuse_seen_db, progress_callback):
         captured["config"] = config
         captured["now"] = now
         captured["ignore_seen_db"] = ignore_seen_db
         captured["reuse_seen_db"] = reuse_seen_db
+        captured["progress_callback"] = progress_callback
         return PipelineResult(
             run_id=1,
             issue_number=1,
@@ -67,8 +68,10 @@ def test_main_dry_run_overrides_pipeline_config(
 
     assert exit_code == 0
     assert captured["config"].settings.dry_run is True
+    assert callable(captured["progress_callback"])
 
     captured_output = capsys.readouterr()
+    assert "Starting manual run in dry-run mode" in captured_output.out
     assert "Dry-run completed" in captured_output.out
 
 
@@ -87,9 +90,10 @@ def test_main_passes_testing_fetch_flags_to_run_pipeline(
         lambda: datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
     )
 
-    def fake_run_pipeline(*, config, now, ignore_seen_db, reuse_seen_db):
+    def fake_run_pipeline(*, config, now, ignore_seen_db, reuse_seen_db, progress_callback):
         captured["ignore_seen_db"] = ignore_seen_db
         captured["reuse_seen_db"] = reuse_seen_db
+        captured["progress_callback"] = progress_callback
         return PipelineResult(
             run_id=1,
             issue_number=0,
@@ -110,7 +114,9 @@ def test_main_passes_testing_fetch_flags_to_run_pipeline(
     exit_code = run_manual_module.main(["--ignore-seen-db"])
 
     assert exit_code == 0
-    assert captured == {"ignore_seen_db": True, "reuse_seen_db": False}
+    assert captured["ignore_seen_db"] is True
+    assert captured["reuse_seen_db"] is False
+    assert callable(captured["progress_callback"])
 
 
 def test_main_sources_only_reports_fetch_counts(
@@ -136,6 +142,7 @@ def test_main_sources_only_reports_fetch_counts(
 
     async def fake_fetch_all_sources_report(**kwargs):
         captured["persist_to_db"] = kwargs["persist_to_db"]
+        captured["progress_callback"] = kwargs["progress_callback"]
         return FetchSummary(
             articles=[object(), object()],
             sources_attempted=3,
@@ -152,7 +159,10 @@ def test_main_sources_only_reports_fetch_counts(
 
     assert exit_code == 0
     assert captured["persist_to_db"] is False
+    assert callable(captured["progress_callback"])
     captured_output = capsys.readouterr()
+    assert "Starting manual run in sources-only mode" in captured_output.out
+    assert "Fetching sources only for 3 configured sources." in captured_output.out
     assert "Fetched 2 deduplicated articles from 3 configured sources." in captured_output.out
 
 
@@ -200,6 +210,8 @@ def test_main_preview_saves_files_and_opens_browser(
     assert browser_calls == [preview_path.resolve().as_uri()]
 
     captured_output = capsys.readouterr()
+    assert "Starting manual run in preview mode" in captured_output.out
+    assert "Saving preview files to" in captured_output.out
     assert str(preview_path) in captured_output.out
     assert "Rendered digest for issue #1" in captured_output.out
 
@@ -237,11 +249,12 @@ def test_main_test_email_sends_only_to_requested_recipient(
         ),
     )
 
-    def fake_send_digest(html: str, plaintext: str, subject: str, *, config):
+    def fake_send_digest(html: str, plaintext: str, subject: str, *, config, progress_callback):
         sent["html"] = html
         sent["plaintext"] = plaintext
         sent["subject"] = subject
         sent["config"] = config
+        sent["progress_callback"] = progress_callback
         return True
 
     monkeypatch.setattr(run_manual_module, "send_digest", fake_send_digest)
@@ -255,9 +268,69 @@ def test_main_test_email_sends_only_to_requested_recipient(
     assert sent["config"].default_recipient_group == run_manual_module.MANUAL_TEST_GROUP
     assert [recipient.email for recipient in sent["config"].recipients] == ["reviewer@example.com"]
     assert list(sent["config"].recipient_groups) == [run_manual_module.MANUAL_TEST_GROUP]
+    assert callable(sent["progress_callback"])
 
     captured_output = capsys.readouterr()
+    assert "Starting manual run in test-email mode" in captured_output.out
+    assert "Sending test digest to reviewer@example.com." in captured_output.out
     assert "Sent test digest to reviewer@example.com" in captured_output.out
+
+
+def test_render_live_digest_reports_stage_progress(
+    monkeypatch: pytest.MonkeyPatch,
+    run_manual_module,
+) -> None:
+    config = _build_config(dry_run=False)
+    progress_messages: list[str] = []
+
+    monkeypatch.setattr(run_manual_module, "load_source_registry", lambda: [object()])
+
+    async def fake_fetch_all_sources_report(**_kwargs):
+        return FetchSummary(
+            articles=[object()],
+            sources_attempted=1,
+            sources_succeeded=1,
+            sources_failed=0,
+            articles_found=1,
+            articles_deduplicated=1,
+            articles_saved=0,
+        )
+
+    async def fake_score_articles(*_args, **_kwargs):
+        return [object()]
+
+    async def fake_compose_digest(*_args, **_kwargs):
+        class _Digest:
+            top_story = object()
+            key_developments = []
+            on_our_radar = []
+            quick_hits = []
+
+        return _Digest()
+
+    monkeypatch.setattr(run_manual_module, "fetch_all_sources_report", fake_fetch_all_sources_report)
+    monkeypatch.setattr(run_manual_module, "score_articles", fake_score_articles)
+    monkeypatch.setattr(run_manual_module, "compose_digest", fake_compose_digest)
+    monkeypatch.setattr(run_manual_module, "render_digest", lambda *_args, **_kwargs: "<html>digest</html>")
+    monkeypatch.setattr(run_manual_module, "render_plaintext", lambda *_args, **_kwargs: "digest")
+    monkeypatch.setattr(run_manual_module, "_count_digest_articles", lambda _digest: 1)
+
+    run_manual_module.asyncio.run(
+        run_manual_module._render_live_digest(
+            config=config,
+            now=datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
+            progress_callback=progress_messages.append,
+        )
+    )
+
+    assert progress_messages == [
+        "Loading source registry.",
+        "Fetching live articles from 1 configured source.",
+        "Scoring 1 article for relevance with anthropic/claude-haiku-4.5.",
+        "Composing digest from 1 relevant article with anthropic/claude-sonnet-4-6.",
+        "Rendering HTML and plain-text digest output.",
+        "Renderer complete: 1 item included in the digest.",
+    ]
 
 
 def test_render_live_digest_uses_non_persisting_fetch_path_and_fails_on_total_outage(

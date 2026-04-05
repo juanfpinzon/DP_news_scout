@@ -12,6 +12,7 @@ except ImportError:  # pragma: no cover - dependency is declared in pyproject
 from src.storage.db import DeliveryRecord, log_delivery, utc_now_iso
 from src.utils.config import AppConfig, RecipientConfig, load_config
 from src.utils.logging import get_logger
+from src.utils.progress import emit_progress
 
 MAX_SEND_ATTEMPTS = 3
 BASE_BACKOFF_SECONDS = 1.0
@@ -27,6 +28,7 @@ def send_digest(
     group: str | None = None,
     client: Any | None = None,
     sleep_fn: Callable[[float], None] = time.sleep,
+    progress_callback: Callable[[str], None] | None = None,
 ) -> bool:
     """Send a rendered digest email through AgentMail."""
     config = config or load_config()
@@ -47,6 +49,7 @@ def send_digest(
             reason=message,
         )
         _record_delivery(config=config, run_id=run_id, recipient_count=0, status="skipped", error=message)
+        emit_progress(progress_callback, message)
         return False
 
     if client is None:
@@ -66,6 +69,11 @@ def send_digest(
     last_error: str | None = None
     last_error_type: str | None = None
     for attempt in range(1, MAX_SEND_ATTEMPTS + 1):
+        emit_progress(
+            progress_callback,
+            f"Email delivery attempt {attempt}/{MAX_SEND_ATTEMPTS} "
+            f"to {recipient_count} {_pluralize(recipient_count, 'recipient')}.",
+        )
         try:
             response = client.inboxes.messages.send(
                 config.env.agentmail_inbox_id,
@@ -86,6 +94,10 @@ def send_digest(
                 status="sent",
                 error=None,
             )
+            emit_progress(
+                progress_callback,
+                f"Email delivery succeeded on attempt {attempt}.",
+            )
             return True
         except Exception as exc:  # pragma: no cover - SDK exception types vary
             last_error = str(exc)
@@ -101,7 +113,13 @@ def send_digest(
                 error_type=last_error_type,
             )
             if attempt < MAX_SEND_ATTEMPTS:
-                sleep_fn(BASE_BACKOFF_SECONDS * (2 ** (attempt - 1)))
+                delay_seconds = BASE_BACKOFF_SECONDS * (2 ** (attempt - 1))
+                emit_progress(
+                    progress_callback,
+                    f"Email delivery attempt {attempt}/{MAX_SEND_ATTEMPTS} failed "
+                    f"({last_error_type}); retrying in {delay_seconds:.1f}s.",
+                )
+                sleep_fn(delay_seconds)
 
     logger.error(
         "email_delivery_failed",
@@ -118,7 +136,18 @@ def send_digest(
         status="failed",
         error=last_error,
     )
+    emit_progress(
+        progress_callback,
+        "Email delivery failed after "
+        f"{MAX_SEND_ATTEMPTS} attempts: {last_error or 'unknown error'}.",
+    )
     return False
+
+
+def _pluralize(count: int, singular: str, plural: str | None = None) -> str:
+    if count == 1:
+        return singular
+    return plural or f"{singular}s"
 
 
 def _resolve_recipients(config: AppConfig, *, group: str | None) -> list[RecipientConfig]:
