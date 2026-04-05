@@ -188,6 +188,7 @@ async def _fetch_single_source(
                     robots_policy=robots_policy,
                     allow_robots_network_fallback=allow_robots_network_fallback,
                     logger=logger,
+                    progress_callback=progress_callback,
                 )
             except Exception as exc:
                 logger.warning(
@@ -243,6 +244,7 @@ async def _fetch_single_source(
                         robots_policy=robots_policy,
                         allow_robots_network_fallback=allow_robots_network_fallback,
                         logger=logger,
+                        progress_callback=progress_callback,
                     )
                 except Exception as fallback_exc:
                     logger.warning(
@@ -313,6 +315,7 @@ async def _fetch_single_source(
                 robots_policy=robots_policy,
                 allow_robots_network_fallback=allow_robots_network_fallback,
                 logger=logger,
+                progress_callback=progress_callback,
             )
         except Exception as exc:
             logger.warning(
@@ -388,6 +391,7 @@ async def _run_search_fallback(
     robots_policy: RobotsPolicy,
     allow_robots_network_fallback: bool,
     logger,
+    progress_callback: Callable[[str], None] | None = None,
 ) -> list[RawArticle]:
     return await search_fallback_articles(
         source,
@@ -397,6 +401,7 @@ async def _run_search_fallback(
         robots_policy=robots_policy,
         allow_robots_network_fallback=allow_robots_network_fallback,
         logger=logger,
+        progress_callback=progress_callback,
     )
 
 

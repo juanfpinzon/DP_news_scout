@@ -18,6 +18,14 @@ from src.fetcher.search_fallback import (
 from src.utils.config import Settings
 
 
+class _CapturingLogger:
+    def __init__(self) -> None:
+        self.records: list[tuple[str, dict[str, object]]] = []
+
+    def info(self, event: str, **kwargs) -> None:
+        self.records.append((event, kwargs))
+
+
 def test_load_effective_search_allowlist_auto_includes_trusted_source_categories(
     tmp_path,
 ) -> None:
@@ -360,6 +368,166 @@ def test_search_fallback_articles_retries_transient_brave_errors(monkeypatch) ->
 
     assert attempts["count"] == 2
     assert len(articles) == 1
+
+
+def test_search_fallback_articles_emits_zero_result_summary(monkeypatch) -> None:
+    now = datetime(2026, 4, 5, 9, 0, tzinfo=timezone.utc)
+    messages: list[str] = []
+    logger = _CapturingLogger()
+    monkeypatch.setenv("BRAVE_SEARCH_API_KEY", "brave-key")
+    monkeypatch.setattr(
+        "src.fetcher.search_fallback.load_effective_search_allowlist",
+        lambda: SearchFallbackAllowlist(
+            publishers={},
+            deny_domains=set(),
+            auto_include_source_categories=(),
+        ),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "api.search.brave.com":
+            return httpx.Response(200, json={"results": []})
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    source = Source(
+        name="SAP Ariba",
+        url="https://news.sap.com/tags/sap-ariba/",
+        tier=2,
+        method="scrape",
+        active=False,
+        category="vendor",
+        selectors={"article": "article", "title": "h2", "link": "a[href]", "date": "time"},
+        fallback_search=SearchFallbackConfig(
+            configured=True,
+            enabled=True,
+            include_when_inactive=True,
+            query="\"SAP Ariba\" procurement",
+            max_results=2,
+        ),
+    )
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    try:
+        articles = asyncio.run(
+            search_fallback_articles(
+                source,
+                client=client,
+                settings=_settings(),
+                rate_limiter=DomainRateLimiter(0),
+                robots_policy=RobotsPolicy(),
+                allow_robots_network_fallback=False,
+                now=now,
+                logger=logger,
+                progress_callback=messages.append,
+            )
+        )
+    finally:
+        asyncio.run(client.aclose())
+
+    assert articles == []
+    assert messages == ["Search fallback for SAP Ariba: Brave returned 0 results."]
+    assert logger.records[-1][0] == "source_search_fallback_complete"
+    assert logger.records[-1][1]["summary"] == "Brave returned 0 results."
+
+
+def test_search_fallback_articles_summarizes_allowlist_and_stale_rejections(monkeypatch) -> None:
+    now = datetime(2026, 4, 5, 9, 0, tzinfo=timezone.utc)
+    messages: list[str] = []
+    logger = _CapturingLogger()
+    monkeypatch.setenv("BRAVE_SEARCH_API_KEY", "brave-key")
+    monkeypatch.setattr(
+        "src.fetcher.search_fallback.load_effective_search_allowlist",
+        lambda: SearchFallbackAllowlist(
+            publishers={
+                "reuters.com": SearchFallbackPublisher(
+                    domain="reuters.com",
+                    label="Reuters",
+                    group="mainstream",
+                    active=True,
+                )
+            },
+            deny_domains=set(),
+            auto_include_source_categories=(),
+        ),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "api.search.brave.com":
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {
+                            "url": "https://example.com/not-allowlisted",
+                            "title": "Ignore me",
+                        },
+                        {
+                            "url": "https://www.reuters.com/world/europe/example-story/",
+                            "title": "Old Reuters story",
+                            "description": "Recovered summary",
+                        },
+                    ]
+                },
+            )
+        if request.url.host == "www.reuters.com" and request.url.path == "/robots.txt":
+            return httpx.Response(200, text="User-agent: *\nAllow: /\n")
+        if request.url.host == "www.reuters.com":
+            return httpx.Response(
+                200,
+                text=dedent(
+                    """
+                    <html>
+                      <head>
+                        <title>Old Reuters story</title>
+                        <meta property="article:published_time" content="2026-03-20T07:00:00Z">
+                      </head>
+                    </html>
+                    """
+                ).strip(),
+            )
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    source = Source(
+        name="SAP Ariba",
+        url="https://news.sap.com/tags/sap-ariba/",
+        tier=2,
+        method="scrape",
+        active=False,
+        category="vendor",
+        selectors={"article": "article", "title": "h2", "link": "a[href]", "date": "time"},
+        fallback_search=SearchFallbackConfig(
+            configured=True,
+            enabled=True,
+            include_when_inactive=True,
+            query="\"SAP Ariba\" procurement",
+            max_results=2,
+        ),
+    )
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    try:
+        articles = asyncio.run(
+            search_fallback_articles(
+                source,
+                client=client,
+                settings=_settings(),
+                rate_limiter=DomainRateLimiter(0),
+                robots_policy=RobotsPolicy(),
+                allow_robots_network_fallback=False,
+                now=now,
+                logger=logger,
+                progress_callback=messages.append,
+            )
+        )
+    finally:
+        asyncio.run(client.aclose())
+
+    assert articles == []
+    assert messages == [
+        "Search fallback for SAP Ariba: Brave returned 2 results; 1 blocked by allowlist; 1 stale."
+    ]
+    assert logger.records[-1][1]["rejected_domain_not_allowed"] == 1
+    assert logger.records[-1][1]["rejected_stale"] == 1
 
 
 def _settings() -> Settings:

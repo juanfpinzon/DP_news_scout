@@ -99,6 +99,22 @@ publishers:
     label: Harvard Business Review
     group: trade_media
     active: true
+  - domain: globaltrademag.com
+    label: Global Trade
+    group: trade_media
+    active: true
+  - domain: dcvelocity.com
+    label: DC Velocity
+    group: trade_media
+    active: true
+  - domain: thescxchange.com
+    label: The Supply Chain Xchange
+    group: trade_media
+    active: true
+  - domain: cpostrategy.media
+    label: CPOstrategy
+    group: trade_media
+    active: true
 
 deny_domains:
   - wikipedia.org

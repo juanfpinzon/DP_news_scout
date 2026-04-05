@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +24,7 @@ from src.fetcher.common import (
 from src.fetcher.models import RawArticle, Source
 from src.fetcher.registry import load_source_registry
 from src.utils.config import CONFIG_DIR, Settings
+from src.utils.progress import emit_progress
 
 BRAVE_NEWS_SEARCH_URL = "https://api.search.brave.com/res/v1/news/search"
 DEFAULT_ALLOWLIST_PATH = CONFIG_DIR / "search_fallback_allowlist.yaml"
@@ -51,6 +53,23 @@ class SearchFallbackAllowlist:
     auto_include_source_categories: tuple[str, ...]
 
 
+@dataclass(slots=True)
+class SearchFallbackDiagnostics:
+    query: str
+    desired_results: int
+    candidate_limit: int
+    brave_results: int = 0
+    accepted_articles: int = 0
+    skipped_invalid_results: int = 0
+    skipped_duplicate_urls: int = 0
+    rejected_domain_not_allowed: int = 0
+    rejected_source_domain_blocked: int = 0
+    rejected_robots_disallowed: int = 0
+    rejected_candidate_fetch_failed: int = 0
+    rejected_stale: int = 0
+    rejected_missing_title: int = 0
+
+
 async def search_fallback_articles(
     source: Source,
     *,
@@ -61,6 +80,7 @@ async def search_fallback_articles(
     allow_robots_network_fallback: bool,
     now: datetime | None = None,
     logger: Any | None = None,
+    progress_callback: Callable[[str], None] | None = None,
 ) -> list[RawArticle]:
     api_key = os.getenv("BRAVE_SEARCH_API_KEY", "").strip()
     if not api_key:
@@ -71,6 +91,11 @@ async def search_fallback_articles(
     desired_results = _resolve_result_limit(source=source, settings=settings)
     candidate_limit = max(6, min(10, desired_results * 4))
     query = _build_query(source)
+    diagnostics = SearchFallbackDiagnostics(
+        query=query,
+        desired_results=desired_results,
+        candidate_limit=candidate_limit,
+    )
     headers = {
         "Accept": "application/json",
         "Accept-Encoding": "gzip",
@@ -92,6 +117,7 @@ async def search_fallback_articles(
     results = payload.get("results")
     if not isinstance(results, list):
         raise SearchFallbackError("Brave search payload did not include a results list")
+    diagnostics.brave_results = len(results)
 
     accepted: list[RawArticle] = []
     seen_urls: set[str] = set()
@@ -101,34 +127,39 @@ async def search_fallback_articles(
         if len(accepted) >= desired_results:
             break
         if not isinstance(item, dict):
+            diagnostics.skipped_invalid_results += 1
             continue
 
         candidate_url = item.get("url")
         if not isinstance(candidate_url, str) or not candidate_url.strip():
+            diagnostics.skipped_invalid_results += 1
             continue
         candidate_url = candidate_url.strip()
         if candidate_url in seen_urls:
+            diagnostics.skipped_duplicate_urls += 1
             continue
 
         publisher = resolve_allowed_publisher(candidate_url, allowlist=allowlist)
         if publisher is None:
-            _log_search_fallback_rejection(
-                logger,
+            _record_search_fallback_rejection(
+                diagnostics=diagnostics,
+                logger=logger,
                 source=source,
                 candidate_url=candidate_url,
                 reason="domain_not_allowed",
             )
             continue
         if _hostname_matches_domain(candidate_url, source_domain):
-            _log_search_fallback_rejection(
-                logger,
+            _record_search_fallback_rejection(
+                diagnostics=diagnostics,
+                logger=logger,
                 source=source,
                 candidate_url=candidate_url,
                 reason="source_domain_blocked",
             )
             continue
 
-        article = await _build_article_from_candidate(
+        article, rejection_reason = await _build_article_from_candidate(
             source=source,
             candidate=item,
             publisher=publisher,
@@ -140,11 +171,31 @@ async def search_fallback_articles(
             now=active_now,
         )
         if article is None:
+            if rejection_reason is not None:
+                _record_search_fallback_rejection(
+                    diagnostics=diagnostics,
+                    logger=logger,
+                    source=source,
+                    candidate_url=candidate_url,
+                    reason=rejection_reason,
+                )
             continue
 
         accepted.append(article)
         seen_urls.add(candidate_url)
 
+    diagnostics.accepted_articles = len(accepted)
+    summary = _format_search_fallback_summary(diagnostics)
+    _log_search_fallback_summary(
+        logger,
+        source=source,
+        diagnostics=diagnostics,
+        summary=summary,
+    )
+    emit_progress(
+        progress_callback,
+        f"Search fallback for {source.name}: {summary}",
+    )
     return accepted
 
 
@@ -308,7 +359,7 @@ async def _build_article_from_candidate(
     robots_policy: RobotsPolicy | None,
     allow_robots_network_fallback: bool,
     now: datetime,
-) -> RawArticle | None:
+) -> tuple[RawArticle | None, str | None]:
     candidate_url = str(candidate["url"]).strip()
     request_headers = build_request_headers(source.name, candidate_url)
 
@@ -320,7 +371,7 @@ async def _build_article_from_candidate(
             allow_network_fallback=allow_robots_network_fallback,
         )
         if not allowed:
-            return None
+            return None, "robots_disallowed"
 
     if rate_limiter is not None:
         await rate_limiter.wait(candidate_url)
@@ -329,12 +380,12 @@ async def _build_article_from_candidate(
         response = await client.get(candidate_url, headers=request_headers)
         response.raise_for_status()
     except httpx.HTTPError:
-        return None
+        return None, "candidate_fetch_failed"
 
     soup = BeautifulSoup(response.text, "html.parser")
     published_at = _extract_document_date(soup) or parse_datetime(candidate.get("page_age"))
     if not is_recent_enough(published_at, now=now, lookback_hours=settings.rss_lookback_hours):
-        return None
+        return None, "stale"
 
     title = (
         _extract_meta_content(soup, "property", ("og:title",))
@@ -343,7 +394,7 @@ async def _build_article_from_candidate(
         or clean_text(candidate.get("title"))
     )
     if not title:
-        return None
+        return None, "missing_title"
 
     summary = (
         _extract_meta_content(soup, "name", ("description",))
@@ -352,18 +403,21 @@ async def _build_article_from_candidate(
     )
     author = _extract_meta_content(soup, "name", ("author", "article:author"))
 
-    return RawArticle(
-        url=candidate_url,
-        title=title,
-        source=publisher.label,
-        source_url=f"https://{publisher.domain}/",
-        category=_publisher_category(publisher),
-        published_at=published_at.isoformat() if published_at is not None else None,
-        fetched_at=now.isoformat(),
-        summary=summary,
-        author=author,
-        origin_source=source.name,
-        discovery_method=SEARCH_FALLBACK_DISCOVERY_METHOD,
+    return (
+        RawArticle(
+            url=candidate_url,
+            title=title,
+            source=publisher.label,
+            source_url=f"https://{publisher.domain}/",
+            category=_publisher_category(publisher),
+            published_at=published_at.isoformat() if published_at is not None else None,
+            fetched_at=now.isoformat(),
+            summary=summary,
+            author=author,
+            origin_source=source.name,
+            discovery_method=SEARCH_FALLBACK_DISCOVERY_METHOD,
+        ),
+        None,
     )
 
 
@@ -465,9 +519,38 @@ def _hostname_matches_value(hostname: str, domain: str) -> bool:
     return hostname == normalized_domain or hostname.endswith(f".{normalized_domain}")
 
 
-def _log_search_fallback_rejection(
-    logger: Any | None,
+def _record_search_fallback_rejection(
     *,
+    diagnostics: SearchFallbackDiagnostics,
+    logger: Any | None,
+    source: Source,
+    candidate_url: str,
+    reason: str,
+) -> None:
+    if reason == "domain_not_allowed":
+        diagnostics.rejected_domain_not_allowed += 1
+    elif reason == "source_domain_blocked":
+        diagnostics.rejected_source_domain_blocked += 1
+    elif reason == "robots_disallowed":
+        diagnostics.rejected_robots_disallowed += 1
+    elif reason == "candidate_fetch_failed":
+        diagnostics.rejected_candidate_fetch_failed += 1
+    elif reason == "stale":
+        diagnostics.rejected_stale += 1
+    elif reason == "missing_title":
+        diagnostics.rejected_missing_title += 1
+
+    _log_search_fallback_rejection(
+        logger=logger,
+        source=source,
+        candidate_url=candidate_url,
+        reason=reason,
+    )
+
+
+def _log_search_fallback_rejection(
+    *,
+    logger: Any | None,
     source: Source,
     candidate_url: str,
     reason: str,
@@ -481,3 +564,58 @@ def _log_search_fallback_rejection(
         candidate_url=candidate_url,
         reason=reason,
     )
+
+
+def _log_search_fallback_summary(
+    logger: Any | None,
+    *,
+    source: Source,
+    diagnostics: SearchFallbackDiagnostics,
+    summary: str,
+) -> None:
+    if logger is None:
+        return
+
+    logger.info(
+        "source_search_fallback_complete",
+        source=source.name,
+        source_url=source.url,
+        query=diagnostics.query,
+        desired_results=diagnostics.desired_results,
+        candidate_limit=diagnostics.candidate_limit,
+        brave_results=diagnostics.brave_results,
+        accepted_articles=diagnostics.accepted_articles,
+        skipped_invalid_results=diagnostics.skipped_invalid_results,
+        skipped_duplicate_urls=diagnostics.skipped_duplicate_urls,
+        rejected_domain_not_allowed=diagnostics.rejected_domain_not_allowed,
+        rejected_source_domain_blocked=diagnostics.rejected_source_domain_blocked,
+        rejected_robots_disallowed=diagnostics.rejected_robots_disallowed,
+        rejected_candidate_fetch_failed=diagnostics.rejected_candidate_fetch_failed,
+        rejected_stale=diagnostics.rejected_stale,
+        rejected_missing_title=diagnostics.rejected_missing_title,
+        summary=summary,
+    )
+
+
+def _format_search_fallback_summary(diagnostics: SearchFallbackDiagnostics) -> str:
+    parts = [f"Brave returned {diagnostics.brave_results} result{'s' if diagnostics.brave_results != 1 else ''}"]
+
+    if diagnostics.accepted_articles:
+        parts.append(
+            f"accepted {diagnostics.accepted_articles} article{'s' if diagnostics.accepted_articles != 1 else ''}"
+        )
+
+    for count, label in (
+        (diagnostics.rejected_domain_not_allowed, "blocked by allowlist"),
+        (diagnostics.rejected_source_domain_blocked, "from the original source domain"),
+        (diagnostics.rejected_robots_disallowed, "blocked by robots.txt"),
+        (diagnostics.rejected_candidate_fetch_failed, "article fetch failed"),
+        (diagnostics.rejected_stale, "stale"),
+        (diagnostics.rejected_missing_title, "missing title"),
+        (diagnostics.skipped_duplicate_urls, "duplicate"),
+        (diagnostics.skipped_invalid_results, "invalid"),
+    ):
+        if count:
+            parts.append(f"{count} {label}")
+
+    return "; ".join(parts) + "."
