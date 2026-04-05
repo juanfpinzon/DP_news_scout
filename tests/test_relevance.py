@@ -269,3 +269,32 @@ def test_score_articles_uses_scoring_model_when_supplied_client_supports_overrid
 
     assert [article.url for article in scored_articles] == ["https://example.com/article-1"]
     assert llm_client.requested_primary_models == ["anthropic/claude-haiku-4.5"]
+
+
+def test_score_articles_supports_alternate_scoring_prompt() -> None:
+    llm_client = FakeLLMClient(
+        [
+            """
+            {
+              "scores": [
+                {"url": "https://example.com/article-1", "score": 8, "reasoning": "Macro-relevant."}
+              ]
+            }
+            """
+        ]
+    )
+
+    async def run() -> list[ScoredArticle]:
+        return await score_articles(
+            [build_article(1)],
+            llm_client=llm_client,
+            settings=build_settings(),
+            scoring_prompt_name="global_news_scoring.md",
+            threshold=5,
+        )
+
+    scored_articles = asyncio.run(run())
+
+    assert [article.url for article in scored_articles] == ["https://example.com/article-1"]
+    assert "Global News Scoring Instructions" in str(llm_client.calls[0]["system_prompt"])
+    assert "Commodity markets" in str(llm_client.calls[0]["system_prompt"])

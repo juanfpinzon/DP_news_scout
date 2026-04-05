@@ -68,3 +68,27 @@ def test_digest_composition_prompt_includes_voice_and_json_contract() -> None:
     assert "one_liner" in prompt
     assert "url may appear only once" in normalized
     assert "current week" in normalized
+
+
+def test_global_news_scoring_prompt_includes_macro_rubric_and_json_contract() -> None:
+    prompt = (ROOT / "prompts" / "global_news_scoring.md").read_text(encoding="utf-8")
+
+    assert "score from 1 to 10" in prompt
+    assert "Return strict JSON only" in prompt
+    assert '"scores"' in prompt
+    assert "Commodity markets" in prompt
+    assert "Trade policy and tariffs" in prompt
+    assert "Sovereign risk" in prompt
+    assert "macro relevance" in prompt
+
+
+def test_global_briefing_composition_prompt_includes_voice_and_json_contract() -> None:
+    prompt = (ROOT / "prompts" / "global_briefing_composition.md").read_text(encoding="utf-8")
+    normalized = prompt.lower()
+
+    assert "trusted geopolitical analyst briefing" in normalized
+    assert "Return strict JSON only" in prompt
+    assert "global_briefing" in prompt
+    assert "why_it_matters" in prompt
+    assert "empty list" in normalized
+    assert "procurement implications" in normalized

@@ -304,6 +304,79 @@ sources:
     selectors: *generic_scrape
     # DEACTIVATED: JS-rendered + likely Cloudflare. Needs Playwright.
 
+  # --- Global macro news ---
+
+  - name: Reuters
+    url: "https://www.rss.reuters.com/news/world"
+    tier: 2
+    method: "rss"
+    active: true
+    category: "global_news"
+    fallback_search:
+      query: "\"Reuters\" tariff OR trade policy OR commodity OR shipping disruption OR export restriction"
+
+  - name: Al Jazeera
+    url: "https://www.aljazeera.com/xml/rss/all.xml"
+    tier: 2
+    method: "rss"
+    active: true
+    category: "global_news"
+    fallback_search:
+      query: "\"Al Jazeera\" tariff OR trade policy OR sanctions OR shipping disruption OR commodity"
+
+  - name: DW
+    url: "https://rss.dw.com/rdf/rss-en-all"
+    tier: 2
+    method: "rss"
+    active: true
+    category: "global_news"
+    fallback_search:
+      query: "\"DW\" tariff OR trade policy OR supply chain OR energy prices OR sanctions"
+
+  - name: BBC World
+    url: "http://feeds.bbci.co.uk/news/world/rss.xml"
+    tier: 2
+    method: "rss"
+    active: true
+    category: "global_news"
+    fallback_search:
+      query: "\"BBC\" tariff OR trade policy OR commodity OR inflation OR shipping disruption"
+
+  - name: CNN World
+    url: "http://rss.cnn.com/rss/edition_world.rss"
+    tier: 2
+    method: "rss"
+    active: true
+    category: "global_news"
+    fallback_search:
+      query: "\"CNN\" tariff OR trade policy OR sanctions OR supply chain disruption OR shipping"
+
+  - name: Bloomberg
+    url: "https://www.bloomberg.com/markets"
+    tier: 2
+    method: "rss"
+    active: false
+    category: "global_news"
+    fallback_search:
+      enabled: true
+      include_when_inactive: true
+      query: "\"Bloomberg\" commodity OR tariff OR trade policy OR supply chain disruption"
+      max_results: 3
+    # Fallback-only: no dependable public RSS feed for this workflow.
+
+  - name: Financial Times
+    url: "https://www.ft.com/world"
+    tier: 2
+    method: "rss"
+    active: false
+    category: "global_news"
+    fallback_search:
+      enabled: true
+      include_when_inactive: true
+      query: "\"Financial Times\" commodity OR tariff OR trade policy OR supply chain disruption"
+      max_results: 3
+    # Fallback-only: FT RSS access is paywalled or inconsistent for this workflow.
+
   # --- Peer CPG companies (competitive intelligence) ---
 
   - name: Mars Newsroom

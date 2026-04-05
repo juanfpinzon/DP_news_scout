@@ -35,6 +35,16 @@ def _make_full_digest() -> Digest:
     )
 
 
+def _make_digest_with_global_briefing() -> Digest:
+    return Digest(
+        top_story=_make_item(1),
+        key_developments=[_make_item(2)],
+        on_our_radar=[_make_item(3)],
+        quick_hits=[_make_quick_hit(1)],
+        global_briefing=[_make_item(4), _make_item(5)],
+    )
+
+
 def _make_minimal_digest() -> Digest:
     return Digest(
         top_story=_make_item(1),
@@ -111,11 +121,22 @@ class TestRenderDigest:
         assert "ON OUR RADAR" in html
         assert "QUICK HITS" in html
 
+    def test_renders_global_macro_briefing_when_populated(self) -> None:
+        html = render_digest(
+            _make_digest_with_global_briefing(),
+            issue_number=1,
+            date="April 4, 2026",
+        )
+        assert "Global Macro Briefing" in html
+        assert "Headline 4" in html
+        assert "Matters because 4." in html
+
     def test_omits_empty_sections(self) -> None:
         html = render_digest(_make_minimal_digest(), issue_number=1, date="April 4, 2026")
         assert "TOP STORY" in html
         assert "KEY DEVELOPMENTS" not in html
         assert "ON OUR RADAR" not in html
+        assert "Global Macro Briefing" not in html
         assert "QUICK HITS" not in html
 
     def test_top_story_content_rendered(self) -> None:
@@ -181,6 +202,14 @@ class TestRenderDigest:
             link_idx = html.index(url)
             link_html = html[max(0, link_idx - 120): link_idx + 180]
             assert "color:#1a2332" in link_html
+
+    def test_header_counts_global_briefing_sources(self) -> None:
+        html = render_digest(
+            _make_digest_with_global_briefing(),
+            issue_number=1,
+            date="April 4, 2026",
+        )
+        assert "6 sources" in html
 
     def test_mobile_body_copy_has_explicit_15px_rule(self) -> None:
         html = render_digest(_make_full_digest(), issue_number=1, date="April 4, 2026")
@@ -295,6 +324,16 @@ class TestRenderPlaintext:
         assert "ON OUR RADAR" in text
         assert "Headline 4" in text
 
+    def test_global_macro_briefing_section(self) -> None:
+        text = render_plaintext(
+            _make_digest_with_global_briefing(),
+            issue_number=1,
+            date="April 4, 2026",
+        )
+        assert "GLOBAL MACRO BRIEFING" in text
+        assert "Headline 4" in text
+        assert "Why it matters: Matters because 4." in text
+
     def test_quick_hits_bulleted(self) -> None:
         text = render_plaintext(_make_full_digest(), issue_number=1, date="April 4, 2026")
         assert "QUICK HITS" in text
@@ -306,6 +345,7 @@ class TestRenderPlaintext:
         assert "TOP STORY" in text
         assert "KEY DEVELOPMENTS" not in text
         assert "ON OUR RADAR" not in text
+        assert "GLOBAL MACRO BRIEFING" not in text
         assert "QUICK HITS" not in text
 
     def test_empty_date_omits_separator(self) -> None:

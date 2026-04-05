@@ -29,7 +29,7 @@ from src.utils.progress import emit_progress
 BRAVE_NEWS_SEARCH_URL = "https://api.search.brave.com/res/v1/news/search"
 DEFAULT_ALLOWLIST_PATH = CONFIG_DIR / "search_fallback_allowlist.yaml"
 SEARCH_FALLBACK_DISCOVERY_METHOD = "search_fallback"
-DEFAULT_AUTO_INCLUDE_CATEGORIES = ("trade_media", "mainstream")
+DEFAULT_AUTO_INCLUDE_CATEGORIES = ("trade_media", "mainstream", "global_news")
 BRAVE_SEARCH_RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 BRAVE_SEARCH_MAX_ATTEMPTS = 3
 
@@ -469,7 +469,8 @@ def _extract_document_date(soup: BeautifulSoup) -> datetime | None:
 
 
 def _publisher_category(publisher: SearchFallbackPublisher) -> str:
-    return "mainstream" if publisher.group.casefold() == "mainstream" else "trade_media"
+    normalized_group = publisher.group.strip().casefold()
+    return normalized_group or "trade_media"
 
 
 def _build_query(source: Source) -> str:

@@ -11,6 +11,7 @@ ALLOWED_SOURCE_CATEGORIES = {
     "mainstream",
     "community",
     "peer_cpg",
+    "global_news",
 }
 ALLOWED_SOURCE_METHODS = {"rss", "scrape"}
 REQUIRED_SCRAPE_SELECTOR_KEYS = ("article", "title", "link", "date")

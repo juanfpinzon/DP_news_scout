@@ -2,6 +2,9 @@ max_articles_per_source: 10
 max_digest_items: 15
 max_digest_items_per_source: 3
 relevance_threshold: 6
+global_news_relevance_threshold: 5
+global_news_max_items: 3
+global_news_max_per_source: 2
 digest_send_time: "09:00"
 timezone: "Central European Time"
 llm_scoring_model: "anthropic/claude-haiku-4.5"

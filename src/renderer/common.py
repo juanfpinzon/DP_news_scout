@@ -20,6 +20,10 @@ def count_unique_sources(digest: Digest) -> int:
         if item.source.strip():
             normalized_sources.add(item.source.strip().casefold())
 
+    for item in digest.global_briefing:
+        if item.source.strip():
+            normalized_sources.add(item.source.strip().casefold())
+
     for hit in digest.quick_hits:
         if hit.source.strip():
             normalized_sources.add(hit.source.strip().casefold())

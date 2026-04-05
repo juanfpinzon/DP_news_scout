@@ -1,19 +1,20 @@
 auto_include_source_categories:
   - trade_media
   - mainstream
+  - global_news
 
 publishers:
   - domain: reuters.com
     label: Reuters
-    group: mainstream
+    group: global_news
     active: true
   - domain: bloomberg.com
     label: Bloomberg
-    group: mainstream
+    group: global_news
     active: true
   - domain: ft.com
     label: Financial Times
-    group: mainstream
+    group: global_news
     active: true
   - domain: wsj.com
     label: The Wall Street Journal
@@ -29,7 +30,23 @@ publishers:
     active: true
   - domain: bbc.com
     label: BBC
-    group: mainstream
+    group: global_news
+    active: true
+  - domain: bbc.co.uk
+    label: BBC
+    group: global_news
+    active: true
+  - domain: cnn.com
+    label: CNN
+    group: global_news
+    active: true
+  - domain: aljazeera.com
+    label: Al Jazeera
+    group: global_news
+    active: true
+  - domain: dw.com
+    label: DW
+    group: global_news
     active: true
   - domain: economist.com
     label: The Economist

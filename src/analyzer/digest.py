@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -50,6 +50,7 @@ class Digest:
     key_developments: list[DigestItem]
     on_our_radar: list[DigestItem]
     quick_hits: list[QuickHit]
+    global_briefing: list[DigestItem] = field(default_factory=list)
 
 
 async def compose_digest(
