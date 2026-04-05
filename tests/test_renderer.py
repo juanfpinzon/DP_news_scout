@@ -126,6 +126,29 @@ class TestRenderDigest:
         assert "https://example.com/article-1" in html
         assert "Source 1" in html
 
+    def test_heading_labels_use_gt_pressura_font_family(self) -> None:
+        html = render_digest(_make_full_digest(), issue_number=1, date="April 4, 2026")
+        heading_font = "GT Pressura LCG Black"
+
+        masthead_end = html.index("6 sources")
+        masthead_region = html[max(0, masthead_end - 700):masthead_end]
+        assert heading_font in masthead_region
+        assert "News" in masthead_region
+        assert "Scout" in masthead_region
+
+        for label in (
+            "TOP STORY",
+            "Key Developments",
+            "Why it matters",
+            "On Our Radar",
+            "Quick Hits",
+            "Quick hit 1",
+        ):
+            label_index = html.rfind(label)
+            assert label_index >= 0
+            region = html[max(0, label_index - 260): label_index + 80]
+            assert heading_font in region
+
     def test_key_developments_rendered(self) -> None:
         html = render_digest(_make_full_digest(), issue_number=1, date="April 4, 2026")
         assert "Headline 2" in html
