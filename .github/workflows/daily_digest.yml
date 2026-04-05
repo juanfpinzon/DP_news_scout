@@ -7,8 +7,8 @@ on:
     # This is 08:00 UTC in winter and 07:00 UTC in summer.
     - cron: "0 9 * * 1-5"
       timezone: "Europe/Madrid"
-    # Temporary cron smoke test for April 5, 2026 at 17:38 Europe/Madrid.
-    - cron: "38 17 5 4 *"
+    # Temporary cron smoke test: run every 5 minutes in dry-run mode.
+    - cron: "*/5 * * * *"
       timezone: "Europe/Madrid"
   workflow_dispatch:
     inputs:
@@ -38,7 +38,7 @@ jobs:
       FEEDBACK_SUBJECT: ${{ secrets.FEEDBACK_SUBJECT }}
       FEEDBACK_URL: ${{ secrets.FEEDBACK_URL }}
       LOG_LEVEL: ${{ vars.LOG_LEVEL || 'INFO' }}
-      DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) || (github.event_name == 'schedule' && github.event.schedule == '38 17 5 4 *') }}
+      DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) || (github.event_name == 'schedule' && github.event.schedule == '*/5 * * * *') }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
