@@ -27,7 +27,7 @@ from src.sender import send_digest
 from src.storage.db import initialize_database, save_articles
 from src.utils.config import DEFAULT_ENV_FILE, AppConfig, RecipientConfig, load_config
 from src.utils.logging import configure_logging, get_logger
-from src.utils.progress import emit_progress
+from src.utils.progress import build_stdout_progress_callback, emit_progress
 
 DEFAULT_PREVIEW_PATH = Path("/tmp/preview.html")
 MANUAL_TEST_GROUP = "manual_test"
@@ -100,7 +100,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     config = _load_runtime_config(dry_run_override=args.dry_run if _uses_pipeline_mode(args) else None)
     configure_logging(config)
     current_time = _current_time()
-    progress_callback = _emit_console_progress
+    progress_callback = build_stdout_progress_callback()
     emit_progress(
         progress_callback,
         "Starting manual run in "
@@ -625,11 +625,6 @@ def _describe_mode(args: argparse.Namespace) -> str:
     if args.dry_run:
         return "dry-run"
     return "pipeline"
-
-
-def _emit_console_progress(message: str) -> None:
-    timestamp = datetime.now().astimezone().strftime("%H:%M:%S")
-    _print_stdout(f"[{timestamp}] {message}")
 
 
 def _print_stdout(message: str) -> None:
