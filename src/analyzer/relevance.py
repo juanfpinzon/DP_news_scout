@@ -130,6 +130,8 @@ async def score_articles(
                         fetched_at=article.fetched_at,
                         summary=article.summary,
                         author=article.author,
+                        origin_source=article.origin_source,
+                        discovery_method=article.discovery_method,
                         relevance_score=score.score,
                         reasoning=score.reasoning,
                     )

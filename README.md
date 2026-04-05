@@ -2,8 +2,8 @@
 
 Digital Procurement News Scout (DPNS) is a daily procurement and digital transformation digest that:
 
-- monitors 16 currently configured active sources (6 RSS, 10 scrape),
-- fetches articles from RSS and approved scrape sources,
+- monitors 16 currently configured active sources (6 RSS, 9 scrape, 1 fallback-only),
+- fetches articles from RSS, approved scrape sources, and Brave-backed search fallback,
 - scores relevance with a lower-cost Claude model via OpenRouter,
 - composes the executive briefing with Sonnet via OpenRouter,
 - renders HTML and plain-text email output,
@@ -41,6 +41,7 @@ OPENROUTER_API_KEY=sk-or-...
 AGENTMAIL_API_KEY=...
 AGENTMAIL_INBOX_ID=...
 EMAIL_FROM=...
+BRAVE_SEARCH_API_KEY=...   # required for search fallback
 ```
 
 5. Run a safe local test first:
@@ -68,6 +69,10 @@ Important current behavior:
 - If the DPNS-managed HTTP client gets `401/403` on `robots.txt`, the fetcher performs one fallback retry for the robots file only.
 - If that retry also fails, the fetcher stays conservative and treats the source as disallowed unless `robots.txt` is confirmed missing (`404/410`).
 - Caller-supplied `httpx.AsyncClient` instances are never bypassed during robots checks.
+- When `search_fallback_enabled` is on, active sources automatically try Brave search fallback after a direct fetch failure or a direct fetch that returns `0` recent articles.
+- Inactive sources can participate as fallback-only sources through `fallback_search.include_when_inactive: true`.
+- Search fallback accepts only allowlisted publisher domains from `config/search_fallback_allowlist.yaml`, rejects common low-trust/user-generated domains, and re-checks `robots.txt` on the candidate publisher before fetching the article page.
+- Fallback articles keep the actual publisher name as `source` and store `origin_source` plus `discovery_method=search_fallback` internally for audit/debugging.
 
 ## Configuration
 
@@ -85,6 +90,10 @@ rss_lookback_hours: 168
 dedup_window_days: 7
 email_max_width_px: 880
 issue_number_override: 0
+search_fallback_enabled: true
+search_fallback_provider: brave
+search_fallback_timeout_seconds: 15
+search_fallback_max_results_per_source: 3
 ```
 
 Meaning:
@@ -98,6 +107,10 @@ Meaning:
 - `dedup_window_days`: recent URL dedup window against SQLite.
 - `email_max_width_px`: desktop max width for the HTML digest.
 - `issue_number_override`: when set, overrides dynamic issue numbering. Remove it or set it to `null` to restore dynamic numbering later.
+- `search_fallback_enabled`: global switch for Brave-backed fallback on blocked, failed, or empty active sources.
+- `search_fallback_provider`: currently fixed to `brave`.
+- `search_fallback_timeout_seconds`: timeout for the Brave request itself.
+- `search_fallback_max_results_per_source`: default cap for accepted fallback articles per source, clamped to `1..3`.
 
 Legacy compatibility:
 
@@ -118,7 +131,25 @@ LLM_MODEL_FALLBACK=anthropic/claude-haiku-4.5
 RSS_LOOKBACK_HOURS=168
 EMAIL_MAX_WIDTH_PX=880
 ISSUE_NUMBER_OVERRIDE=0
+SEARCH_FALLBACK_ENABLED=true
+SEARCH_FALLBACK_PROVIDER=brave
+SEARCH_FALLBACK_TIMEOUT_SECONDS=15
+SEARCH_FALLBACK_MAX_RESULTS_PER_SOURCE=3
+BRAVE_SEARCH_API_KEY=...
 ```
+
+## Search Fallback
+
+Search fallback is config-driven:
+
+- `config/sources.yaml` can add a `fallback_search` block per source with `enabled`, `include_when_inactive`, `query`, and `max_results`.
+- Active sources fall back automatically when the global switch is on unless a source explicitly sets `fallback_search.enabled: false`.
+- Inactive sources only run through search when `fallback_search.enabled: true` and `include_when_inactive: true`.
+- `config/search_fallback_allowlist.yaml` is the editable allowlist/denylist for accepted fallback publishers.
+
+Current notable example:
+
+- `SAP Ariba` remains uncrawlable directly because `news.sap.com` blocks generic crawlers, but it now runs as a fallback-only source using Brave plus the allowlist gate.
 
 ## LLM Model Split
 

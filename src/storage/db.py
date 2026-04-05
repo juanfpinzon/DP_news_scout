@@ -16,6 +16,8 @@ class ArticleRecord:
     published_at: str | None = None
     fetched_at: str | None = None
     content_snippet: str | None = None
+    origin_source: str | None = None
+    discovery_method: str | None = None
     relevance_score: float | None = None
     included_in_digest: bool = False
 
@@ -52,11 +54,14 @@ def initialize_database(database_path: str) -> None:
                 published_at TEXT,
                 fetched_at TEXT,
                 content_snippet TEXT,
+                origin_source TEXT,
+                discovery_method TEXT,
                 relevance_score REAL,
                 included_in_digest INTEGER NOT NULL DEFAULT 0
             )
             """
         )
+        _ensure_articles_schema(connection)
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS pipeline_runs (
@@ -115,6 +120,8 @@ def save_articles(database_path: str, articles: list[ArticleRecord | dict[str, A
                     published_at=excluded.published_at,
                     fetched_at=excluded.fetched_at,
                     content_snippet=excluded.content_snippet,
+                    origin_source=excluded.origin_source,
+                    discovery_method=excluded.discovery_method,
                     relevance_score=excluded.relevance_score,
                     included_in_digest=excluded.included_in_digest
                 """,
@@ -147,6 +154,8 @@ def load_articles(database_path: str) -> list[ArticleRecord]:
                 published_at,
                 fetched_at,
                 content_snippet,
+                origin_source,
+                discovery_method,
                 relevance_score,
                 included_in_digest
             FROM articles
@@ -162,8 +171,10 @@ def load_articles(database_path: str) -> list[ArticleRecord]:
             published_at=row[3],
             fetched_at=row[4],
             content_snippet=row[5],
-            relevance_score=row[6],
-            included_in_digest=bool(row[7]),
+            origin_source=row[6],
+            discovery_method=row[7],
+            relevance_score=row[8],
+            included_in_digest=bool(row[9]),
         )
         for row in rows
     ]
@@ -262,6 +273,17 @@ def _connect_database(database_path: str) -> sqlite3.Connection:
     connection = sqlite3.connect(db_path)
     connection.execute("PRAGMA foreign_keys = ON")
     return connection
+
+
+def _ensure_articles_schema(connection: sqlite3.Connection) -> None:
+    existing_columns = {
+        row[1]
+        for row in connection.execute("PRAGMA table_info(articles)").fetchall()
+    }
+    if "origin_source" not in existing_columns:
+        connection.execute("ALTER TABLE articles ADD COLUMN origin_source TEXT")
+    if "discovery_method" not in existing_columns:
+        connection.execute("ALTER TABLE articles ADD COLUMN discovery_method TEXT")
 
 
 def _normalize_article(article: ArticleRecord | dict[str, Any]) -> ArticleRecord:

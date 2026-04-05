@@ -77,9 +77,17 @@ sources:
     url: "https://news.sap.com/tags/sap-ariba/"
     tier: 2
     method: "scrape"
-    active: true
+    active: false
     category: "vendor"
     selectors: *newsroom_scrape
+    fallback_search:
+      enabled: true
+      include_when_inactive: true
+      query: "\"SAP Ariba\" procurement OR spend management OR sourcing OR supplier management"
+      max_results: 3
+    # DEACTIVATED: news.sap.com robots.txt disallows all generic crawling
+    # (User-agent: * / Disallow: /). Tag and feed endpoints are both blocked.
+    # Search fallback enabled to recover third-party coverage from trusted publishers.
 
   - name: Archlet
     url: "https://www.archlet.io/resources"
@@ -93,6 +101,8 @@ sources:
       link: "a[href]"
       date: ".resources_item-details-wrapper .eyebrow-text:last-child, time, .date, .published"
       summary: "p, .excerpt, .summary, .description"
+    fallback_search:
+      query: "\"Archlet\" procurement OR sourcing OR tender"
     # Webflow site — custom selectors to avoid matching navbar w-dyn-items
 
   - name: Keelvar
@@ -107,6 +117,8 @@ sources:
       link: "a[href]"
       date: "time, .date, .published, .post-date, .carddate, .blogdate"
       summary: "p, .excerpt, .summary, .description"
+    fallback_search:
+      query: "\"Keelvar\" procurement OR sourcing OR supplier management"
     # Webflow site — uses .postcollectionitem containers
 
   - name: SpendHQ
@@ -116,6 +128,8 @@ sources:
     active: true
     category: "vendor"
     selectors: *resource_scrape
+    fallback_search:
+      query: "\"SpendHQ\" procurement OR spend analytics OR supplier management"
 
   - name: GEP
     url: "https://www.gep.com/blog/mind"
@@ -124,6 +138,8 @@ sources:
     active: true
     category: "vendor"
     selectors: *resource_scrape
+    fallback_search:
+      query: "\"GEP\" procurement OR supply chain OR sourcing OR \"GEP Worldwide\""
 
   - name: Zip
     url: "https://ziphq.com/blog"
@@ -138,6 +154,8 @@ sources:
       link: "a[href]"
       date: "time, .date, .published"
       summary: "p, .excerpt, .summary, .description"
+    fallback_search:
+      query: "\"Zip\" OR \"ZipHQ\" procurement OR \"intake-to-procure\" OR purchasing"
     # Webflow site — .article-preview-block is an <a> tag with href
 
   - name: Sievo
@@ -152,6 +170,8 @@ sources:
       link: "a[href]"
       date: "time, .date, .published, .post-date"
       summary: "p, .excerpt, .summary, .description"
+    fallback_search:
+      query: "\"Sievo\" procurement OR spend analysis OR sourcing"
     # HubSpot CMS — .l-news-listing__item containers + featured .c-blog-item-big
 
   - name: Coupa
@@ -252,6 +272,8 @@ sources:
       link: "a[href]"
       date: "time, .date, .published"
       summary: "p, .excerpt, .summary, .description"
+    fallback_search:
+      query: "\"Digital Procurement World\" procurement OR conference OR summit"
     # Rebranded from digitalprocurementworld.com (DNS dead) to dpw.ai
 
   - name: Procurious
@@ -291,6 +313,8 @@ sources:
     active: true
     category: "peer_cpg"
     selectors: *newsroom_scrape
+    fallback_search:
+      query: "Mars procurement OR supply chain OR sourcing"
 
   - name: Unilever Newsroom
     url: "https://www.unilever.com/news/"

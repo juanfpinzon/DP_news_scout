@@ -194,7 +194,9 @@ def _run_sources_only(
 ) -> int:
     logger = get_logger(__name__, pipeline_stage="manual")
     emit_progress(progress_callback, "Loading source registry.")
-    sources = load_source_registry()
+    sources = load_source_registry(
+        include_fallback_only=config.settings.search_fallback_enabled,
+    )
     emit_progress(
         progress_callback,
         f"Fetching sources only for {len(sources)} configured {_pluralize(len(sources), 'source')}.",
@@ -312,7 +314,9 @@ async def _render_live_digest(
         fallback=_next_issue_number(config.settings.database_path),
     )
     emit_progress(progress_callback, "Loading source registry.")
-    sources = load_source_registry()
+    sources = load_source_registry(
+        include_fallback_only=config.settings.search_fallback_enabled,
+    )
 
     if reuse_seen_db:
         emit_progress(

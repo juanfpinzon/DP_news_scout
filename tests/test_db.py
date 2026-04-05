@@ -8,6 +8,7 @@ from src.storage.db import (
     PipelineRunRecord,
     get_recent_urls,
     initialize_database,
+    load_articles,
     log_delivery,
     log_run,
     save_articles,
@@ -27,6 +28,8 @@ def test_database_helpers_round_trip(tmp_path) -> None:
                 source="Example",
                 published_at=utc_now_iso(),
                 content_snippet="Snippet",
+                origin_source="SAP Ariba",
+                discovery_method="search_fallback",
                 relevance_score=8,
                 included_in_digest=True,
             )
@@ -66,6 +69,10 @@ def test_database_helpers_round_trip(tmp_path) -> None:
     assert article_count == 1
     assert run_count == 1
     assert delivery_count == 1
+
+    articles = load_articles(database_path)
+    assert articles[0].origin_source == "SAP Ariba"
+    assert articles[0].discovery_method == "search_fallback"
 
 
 def test_initialize_database_creates_file(tmp_path) -> None:

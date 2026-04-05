@@ -38,7 +38,7 @@ def test_run_pipeline_happy_path_sends_digest_and_updates_run(tmp_path, monkeypa
 
     monkeypatch.setattr(
         "src.main.load_source_registry",
-        lambda: [_make_source("Source A"), _make_source("Source B")],
+        lambda **_kwargs: [_make_source("Source A"), _make_source("Source B")],
     )
 
     async def fake_fetch_all_sources_report(**_kwargs):
@@ -108,7 +108,7 @@ def test_run_pipeline_uses_issue_number_override_when_configured(tmp_path, monke
     config = _build_config(tmp_path=tmp_path, dry_run=False, issue_number_override=0)
     sent: dict[str, object] = {}
 
-    monkeypatch.setattr("src.main.load_source_registry", lambda: [_make_source("Source A")])
+    monkeypatch.setattr("src.main.load_source_registry", lambda **_kwargs: [_make_source("Source A")])
 
     async def fake_fetch_all_sources_report(**_kwargs):
         return _make_fetch_summary(
@@ -153,7 +153,7 @@ def test_run_pipeline_appends_optional_subject_suffix(tmp_path, monkeypatch) -> 
     config = _build_config(tmp_path=tmp_path, dry_run=False, issue_number_override=0)
     sent: dict[str, object] = {}
 
-    monkeypatch.setattr("src.main.load_source_registry", lambda: [_make_source("Source A")])
+    monkeypatch.setattr("src.main.load_source_registry", lambda **_kwargs: [_make_source("Source A")])
 
     async def fake_fetch_all_sources_report(**_kwargs):
         return _make_fetch_summary(
@@ -199,7 +199,7 @@ def test_run_pipeline_passes_ignore_seen_db_to_fetcher(tmp_path, monkeypatch) ->
     config = _build_config(tmp_path=tmp_path, dry_run=False)
     captured: dict[str, object] = {}
 
-    monkeypatch.setattr("src.main.load_source_registry", lambda: [_make_source("Source A")])
+    monkeypatch.setattr("src.main.load_source_registry", lambda **_kwargs: [_make_source("Source A")])
 
     async def fake_fetch_all_sources_report(**kwargs):
         captured.update(kwargs)
@@ -237,7 +237,7 @@ def test_run_pipeline_passes_ignore_seen_db_to_fetcher(tmp_path, monkeypatch) ->
 def test_run_pipeline_ignores_progress_callback_failures(tmp_path, monkeypatch) -> None:
     config = _build_config(tmp_path=tmp_path, dry_run=True)
 
-    monkeypatch.setattr("src.main.load_source_registry", lambda: [_make_source("Source A")])
+    monkeypatch.setattr("src.main.load_source_registry", lambda **_kwargs: [_make_source("Source A")])
 
     async def fake_fetch_all_sources_report(**_kwargs):
         return _make_fetch_summary(
@@ -305,7 +305,7 @@ def test_run_pipeline_can_reuse_articles_from_database(tmp_path, monkeypatch) ->
         ],
     )
 
-    monkeypatch.setattr("src.main.load_source_registry", lambda: [_make_source("Source A")])
+    monkeypatch.setattr("src.main.load_source_registry", lambda **_kwargs: [_make_source("Source A")])
     monkeypatch.setattr(
         "src.main.fetch_all_sources_report",
         lambda **_kwargs: (_ for _ in ()).throw(AssertionError("fetch_all_sources_report should not be called")),
@@ -364,7 +364,77 @@ def test_run_pipeline_reuse_skips_undated_scraped_articles(tmp_path, monkeypatch
 
     monkeypatch.setattr(
         "src.main.load_source_registry",
-        lambda: [
+        lambda **_kwargs: [
+            _make_source("Source A"),
+            Source(
+                name="Scrape Source",
+                url="https://example.com/scrape-source",
+                tier=1,
+                method="scrape",
+                active=True,
+                category="vendor",
+            ),
+        ],
+    )
+    monkeypatch.setattr(
+        "src.main.fetch_all_sources_report",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("fetch_all_sources_report should not be called")),
+    )
+
+    async def fake_score_articles(raw_articles, **_kwargs):
+        captured["raw_articles"] = raw_articles
+        return [_make_scored_article(1, source="Source A")]
+
+    async def fake_compose_digest(*_args, **_kwargs):
+        return _make_digest()
+
+    monkeypatch.setattr("src.main.score_articles", fake_score_articles)
+    monkeypatch.setattr("src.main.compose_digest", fake_compose_digest)
+    monkeypatch.setattr("src.main.render_digest", lambda *_args, **_kwargs: "<html>digest</html>")
+    monkeypatch.setattr("src.main.render_plaintext", lambda *_args, **_kwargs: "digest")
+    monkeypatch.setattr("src.main.send_digest", lambda *_args, **_kwargs: True)
+
+    result = run_pipeline(
+        config=config,
+        now=datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
+        reuse_seen_db=True,
+    )
+
+    assert result.status == "success"
+    assert [article.url for article in captured["raw_articles"]] == ["https://example.com/rss-article"]
+
+
+def test_run_pipeline_reuse_skips_undated_search_fallback_articles(tmp_path, monkeypatch) -> None:
+    config = _build_config(tmp_path=tmp_path, dry_run=False)
+    captured: dict[str, object] = {}
+
+    save_articles(
+        config.settings.database_path,
+        [
+            ArticleRecord(
+                url="https://example.com/rss-article",
+                title="RSS Article",
+                source="Source A",
+                published_at="2026-04-04T08:00:00+00:00",
+                fetched_at="2026-04-04T08:05:00+00:00",
+                content_snippet="Summary 1",
+            ),
+            ArticleRecord(
+                url="https://reuters.com/fallback-article",
+                title="Fallback Article",
+                source="Reuters",
+                origin_source="Scrape Source",
+                discovery_method="search_fallback",
+                published_at=None,
+                fetched_at="2026-04-04T08:05:00+00:00",
+                content_snippet="Fallback summary",
+            ),
+        ],
+    )
+
+    monkeypatch.setattr(
+        "src.main.load_source_registry",
+        lambda **_kwargs: [
             _make_source("Source A"),
             Source(
                 name="Scrape Source",
@@ -407,7 +477,7 @@ def test_run_pipeline_reuse_skips_undated_scraped_articles(tmp_path, monkeypatch
 def test_run_pipeline_dry_run_skips_send(tmp_path, monkeypatch) -> None:
     config = _build_config(tmp_path=tmp_path, dry_run=True)
 
-    monkeypatch.setattr("src.main.load_source_registry", lambda: [_make_source("Source A")])
+    monkeypatch.setattr("src.main.load_source_registry", lambda **_kwargs: [_make_source("Source A")])
 
     async def fake_fetch_all_sources_report(**_kwargs):
         return _make_fetch_summary(
@@ -449,7 +519,7 @@ def test_run_pipeline_sends_no_news_notice_when_no_relevant_articles(tmp_path, m
     config = _build_config(tmp_path=tmp_path, dry_run=False)
     sent: dict[str, str] = {}
 
-    monkeypatch.setattr("src.main.load_source_registry", lambda: [_make_source("Source A")])
+    monkeypatch.setattr("src.main.load_source_registry", lambda **_kwargs: [_make_source("Source A")])
 
     async def fake_fetch_all_sources_report(**_kwargs):
         return _make_fetch_summary(
@@ -496,7 +566,7 @@ def test_run_pipeline_sends_no_news_notice_when_no_relevant_articles(tmp_path, m
 def test_run_pipeline_marks_failed_when_fetch_stage_raises(tmp_path, monkeypatch) -> None:
     config = _build_config(tmp_path=tmp_path, dry_run=False)
 
-    monkeypatch.setattr("src.main.load_source_registry", lambda: [_make_source("Source A")])
+    monkeypatch.setattr("src.main.load_source_registry", lambda **_kwargs: [_make_source("Source A")])
 
     async def fake_fetch_all_sources_report(**_kwargs):
         raise RuntimeError("network blew up")
@@ -531,7 +601,7 @@ def test_run_pipeline_marks_failed_when_source_registry_load_fails(tmp_path, mon
 
     monkeypatch.setattr(
         "src.main.load_source_registry",
-        lambda: (_ for _ in ()).throw(ValueError("invalid sources config")),
+        lambda **_kwargs: (_ for _ in ()).throw(ValueError("invalid sources config")),
     )
 
     result = run_pipeline(
@@ -561,7 +631,7 @@ def test_run_pipeline_marks_failed_when_source_registry_load_fails(tmp_path, mon
 def test_run_pipeline_marks_failed_when_all_sources_fail(tmp_path, monkeypatch) -> None:
     config = _build_config(tmp_path=tmp_path, dry_run=False)
 
-    monkeypatch.setattr("src.main.load_source_registry", lambda: [_make_source("Source A")])
+    monkeypatch.setattr("src.main.load_source_registry", lambda **_kwargs: [_make_source("Source A")])
 
     async def fake_fetch_all_sources_report(**_kwargs):
         return _make_fetch_summary(
@@ -592,7 +662,7 @@ def test_run_pipeline_marks_failed_when_all_sources_fail(tmp_path, monkeypatch) 
 def test_run_pipeline_succeeds_when_some_sources_fail(tmp_path, monkeypatch) -> None:
     config = _build_config(tmp_path=tmp_path, dry_run=False)
 
-    monkeypatch.setattr("src.main.load_source_registry", lambda: [_make_source("Source A"), _make_source("Source B")])
+    monkeypatch.setattr("src.main.load_source_registry", lambda **_kwargs: [_make_source("Source A"), _make_source("Source B")])
 
     async def fake_fetch_all_sources_report(**_kwargs):
         return _make_fetch_summary(
@@ -672,7 +742,7 @@ def test_run_pipeline_real_rss_and_llm_dry_run(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("AGENTMAIL_INBOX_ID", "dpns-integration-test")
     monkeypatch.setenv("EMAIL_FROM", "news-scout@example.com")
 
-    monkeypatch.setattr("src.main.load_source_registry", lambda: selected_sources)
+    monkeypatch.setattr("src.main.load_source_registry", lambda **_kwargs: selected_sources)
     monkeypatch.setattr(
         "src.main.send_digest",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(

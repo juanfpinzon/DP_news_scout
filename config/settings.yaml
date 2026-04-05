@@ -21,3 +21,7 @@ email_max_width_px: 880
 issue_number_override: 0
 recency_priority_window_days: 7
 reuse_seen_db_window_days: 7
+search_fallback_enabled: true
+search_fallback_provider: "brave"
+search_fallback_timeout_seconds: 15
+search_fallback_max_results_per_source: 3

@@ -7,6 +7,16 @@ from src.storage.db import ArticleRecord, utc_now_iso
 
 
 @dataclass(slots=True, frozen=True)
+class SearchFallbackConfig:
+    configured: bool = False
+    enabled_explicit: bool = False
+    enabled: bool = False
+    include_when_inactive: bool = False
+    query: str | None = None
+    max_results: int | None = None
+
+
+@dataclass(slots=True, frozen=True)
 class Source:
     name: str
     url: str
@@ -15,6 +25,7 @@ class Source:
     active: bool
     category: str
     selectors: dict[str, Any] = field(default_factory=dict)
+    fallback_search: SearchFallbackConfig = field(default_factory=SearchFallbackConfig)
 
 
 @dataclass(slots=True)
@@ -28,6 +39,8 @@ class RawArticle:
     fetched_at: str = field(default_factory=utc_now_iso)
     summary: str | None = None
     author: str | None = None
+    origin_source: str | None = None
+    discovery_method: str | None = None
 
     def to_record(self) -> ArticleRecord:
         return ArticleRecord(
@@ -37,4 +50,6 @@ class RawArticle:
             published_at=self.published_at,
             fetched_at=self.fetched_at,
             content_snippet=self.summary,
+            origin_source=self.origin_source,
+            discovery_method=self.discovery_method,
         )

@@ -83,7 +83,9 @@ def run_pipeline(
     )
 
     try:
-        sources = load_source_registry()
+        sources = load_source_registry(
+            include_fallback_only=config.settings.search_fallback_enabled,
+        )
     except Exception as exc:
         error = f"source registry stage failed: {exc}"
         _report_progress(progress_callback, f"Source registry failed: {exc}")
@@ -843,6 +845,8 @@ def _article_record_to_raw_article(
         fetched_at=record.fetched_at or utc_now_iso(),
         summary=record.content_snippet,
         author=None,
+        origin_source=record.origin_source,
+        discovery_method=record.discovery_method,
     )
 
 
@@ -856,7 +860,11 @@ def _record_is_recent_enough(
     if published_time is not None:
         return published_time >= cutoff
 
-    source = source_lookup.get(record.source.strip().casefold())
+    if record.discovery_method == "search_fallback":
+        return False
+
+    source_name = record.origin_source or record.source
+    source = source_lookup.get(source_name.strip().casefold())
     if getattr(source, "method", None) == "scrape":
         # Scraped entries without a resolved publication date are unreliable for
         # reuse mode: an old post can look "fresh" solely because it was fetched
