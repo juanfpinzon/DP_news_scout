@@ -34,7 +34,7 @@ jobs:
       FEEDBACK_EMAIL: ${{ secrets.FEEDBACK_EMAIL }}
       FEEDBACK_SUBJECT: ${{ secrets.FEEDBACK_SUBJECT }}
       FEEDBACK_URL: ${{ secrets.FEEDBACK_URL }}
-      LOG_LEVEL: ${{ vars.LOG_LEVEL || 'INFO' }}
+      LOG_LEVEL: ${{ vars.LOG_LEVEL || 'DEBUG' }}
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
     steps:
       - name: Checkout repository

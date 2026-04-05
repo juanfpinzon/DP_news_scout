@@ -161,7 +161,7 @@ AGENTMAIL_INBOX_ID=...   # Sending inbox ID from AgentMail console
 EMAIL_FROM=news-scout@yourdomain.com
 
 # Optional
-LOG_LEVEL=INFO          # DEBUG for local dev
+LOG_LEVEL=DEBUG         # Temporary default for local and Actions debugging
 DRY_RUN=false           # Set true to skip sending
 PIPELINE_TIMEOUT=600    # Max pipeline runtime (seconds)
 LLM_SCORING_MODEL=anthropic/claude-haiku-4.5
