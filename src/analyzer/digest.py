@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from src.analyzer.freshness import article_priority_key, resolve_reference_time
 from src.analyzer.llm_client import LLMClient
@@ -475,9 +476,13 @@ def _resolve_digest_url(
     field_name: str,
     article_urls: set[str],
 ) -> str:
-    normalized_url = url.strip().rstrip(".,);]")
+    normalized_url = _sanitize_digest_url(url)
     if normalized_url in article_urls:
         return normalized_url
+
+    canonical_candidates = _find_canonical_url_matches(normalized_url, article_urls)
+    if len(canonical_candidates) == 1:
+        return canonical_candidates[0]
 
     # Only repair uniquely truncated URLs. Never coerce a longer model URL
     # down to a selected article, because that can silently relink content.
@@ -489,9 +494,133 @@ def _resolve_digest_url(
     if len(truncated_candidates) == 1:
         return truncated_candidates[0]
 
+    brand_qualified_candidates = _find_brand_qualified_path_variant_matches(
+        normalized_url,
+        article_urls,
+    )
+    if len(brand_qualified_candidates) == 1:
+        return brand_qualified_candidates[0]
+
     raise DigestCompositionError(
         f"Digest payload field '{field_name}' references unknown article URL: {url}"
     )
+
+
+def _sanitize_digest_url(url: str) -> str:
+    return url.strip().rstrip(".,);]")
+
+
+def _canonicalize_digest_url(url: str) -> str:
+    parsed = urlsplit(url)
+    scheme = parsed.scheme.lower() or "https"
+    host = parsed.netloc.lower().removeprefix("www.")
+    path = parsed.path.rstrip("/") or "/"
+    query = urlencode(sorted(parse_qsl(parsed.query, keep_blank_values=True)))
+    return urlunsplit((scheme, host, path, query, ""))
+
+
+def _find_canonical_url_matches(url: str, article_urls: set[str]) -> list[str]:
+    canonical_target = _canonicalize_digest_url(url)
+    return sorted(
+        candidate
+        for candidate in article_urls
+        if _canonicalize_digest_url(candidate) == canonical_target
+    )
+
+
+def _find_brand_qualified_path_variant_matches(
+    url: str,
+    article_urls: set[str],
+) -> list[str]:
+    target = _split_digest_url_parts(url)
+    if target is None:
+        return []
+
+    target_host, target_segments = target
+    brand_tokens = _extract_host_brand_tokens(target_host)
+    if len(target_segments) < 3 or not brand_tokens:
+        return []
+
+    matches: list[str] = []
+    for candidate in article_urls:
+        candidate_parts = _split_digest_url_parts(candidate)
+        if candidate_parts is None:
+            continue
+
+        candidate_host, candidate_segments = candidate_parts
+        if candidate_host != target_host:
+            continue
+        if len(candidate_segments) != len(target_segments):
+            continue
+
+        differing_indexes = [
+            index
+            for index, (target_segment, candidate_segment) in enumerate(
+                zip(target_segments, candidate_segments, strict=True)
+            )
+            if target_segment.casefold() != candidate_segment.casefold()
+        ]
+        if len(differing_indexes) != 1:
+            continue
+
+        differing_index = differing_indexes[0]
+        if differing_index >= len(target_segments) - 2:
+            continue
+
+        if not _is_brand_qualified_segment_variant(
+            target_segments[differing_index],
+            candidate_segments[differing_index],
+            brand_tokens=brand_tokens,
+        ):
+            continue
+
+        matches.append(candidate)
+
+    return sorted(matches)
+
+
+def _split_digest_url_parts(url: str) -> tuple[str, list[str]] | None:
+    parsed = urlsplit(url)
+    host = parsed.netloc.lower().removeprefix("www.")
+    if not host:
+        return None
+
+    path_segments = [segment for segment in parsed.path.split("/") if segment]
+    return host, path_segments
+
+
+def _extract_host_brand_tokens(host: str) -> set[str]:
+    first_label = host.split(".", maxsplit=1)[0]
+    return {
+        token
+        for token in re.split(r"[^a-z0-9]+", first_label.casefold())
+        if token
+    }
+
+
+def _is_brand_qualified_segment_variant(
+    left: str,
+    right: str,
+    *,
+    brand_tokens: set[str],
+) -> bool:
+    left_tokens = [token for token in re.split(r"[-_]+", left.casefold()) if token]
+    right_tokens = [token for token in re.split(r"[-_]+", right.casefold()) if token]
+    if not left_tokens or not right_tokens:
+        return False
+    if abs(len(left_tokens) - len(right_tokens)) != 1:
+        return False
+
+    longer_tokens = left_tokens if len(left_tokens) > len(right_tokens) else right_tokens
+    shorter_tokens = right_tokens if longer_tokens is left_tokens else left_tokens
+
+    extra_token: str | None = None
+    if shorter_tokens == longer_tokens[1:]:
+        extra_token = longer_tokens[0]
+    elif shorter_tokens == longer_tokens[:-1]:
+        extra_token = longer_tokens[-1]
+
+    return extra_token in brand_tokens if extra_token is not None else False
 
 
 def _require_string(value: Any, field_name: str, *, allow_empty: bool = False) -> str:
@@ -596,6 +725,7 @@ def _build_json_repair_prompt(
         "articles": [
             {
                 "url": article.url,
+                "title": article.title,
                 "source": article.source,
                 "date": article.published_at or "",
             }
