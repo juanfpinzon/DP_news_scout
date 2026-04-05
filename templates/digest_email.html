@@ -43,7 +43,8 @@
         <!--[if mso]>
         <table role="presentation" align="center" width="{{ max_width_px }}" cellpadding="0" cellspacing="0" border="0"><tr><td>
         <![endif]-->
-        <table role="presentation" class="email-container" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:{{ max_width_px }}px;background-color:#ffffff;border:1px solid #b8c2cc;">
+        <div class="email-container" style="max-width:{{ max_width_px }}px;margin:0 auto;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;background-color:#ffffff;border:1px solid #b8c2cc;">
 
           <!-- ================================================================
                HEADER
@@ -61,25 +62,37 @@
               <!-- Header: branding (left) + issue number (right) -->
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
-                  <td valign="middle" width="100%" class="mobile-padding" style="padding:26px 32px 24px;">
-                    <p style="margin:0 0 7px 0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:bold;color:#2d8b8b;letter-spacing:3px;text-transform:uppercase;">
-                      PepsiCo Digital Procurement
-                    </p>
-                    <p style="margin:0 0 11px 0;font-family:Georgia,'Times New Roman',serif;font-size:36px;font-weight:normal;color:#f1faee;line-height:1.1;letter-spacing:1px;">
-                      News&nbsp;Scout
-                    </p>
-                    <p style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;color:#5a7d9a;letter-spacing:0.3px;">
-                      {{ date }}&nbsp;&nbsp;&middot;&nbsp;&nbsp;{{ source_count_label }}
-                    </p>
-                  </td>
-                  <!-- Large decorative issue number -->
-                  <td valign="middle" align="right" class="mobile-padding" style="padding:22px 32px 22px 0;white-space:nowrap;">
-                    <p class="issue-num" style="margin:0 0 3px 0;font-family:Georgia,'Times New Roman',serif;font-size:64px;font-weight:bold;color:#253b56;line-height:1;letter-spacing:-2px;text-align:right;">
-                      #{{ issue_number }}
-                    </p>
-                    <p style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;color:#2d4a62;letter-spacing:3px;text-transform:uppercase;text-align:right;">
-                      Issue
-                    </p>
+                  <td class="mobile-padding" style="padding:26px 32px 24px;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;table-layout:fixed;">
+                      <tr>
+                        <td valign="middle" width="100%" class="stack-column">
+                          <p style="margin:0 0 7px 0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:bold;color:#2d8b8b;letter-spacing:3px;text-transform:uppercase;">
+                            PepsiCo Digital Procurement
+                          </p>
+                          <p style="margin:0 0 11px 0;font-family:Georgia,'Times New Roman',serif;font-size:36px;font-weight:normal;color:#f1faee;line-height:1.1;letter-spacing:1px;">
+                            News&nbsp;Scout
+                          </p>
+                          <p style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;color:#5a7d9a;letter-spacing:0.3px;">
+                            {{ date }}&nbsp;&nbsp;&middot;&nbsp;&nbsp;{{ source_count_label }}
+                          </p>
+                        </td>
+                        <!-- Nested two-column table is more reliable in Gmail than an empty spacer cell -->
+                        <td valign="middle" align="right" width="172" class="stack-column" style="padding-left:20px;white-space:nowrap;text-align:right;">
+                          <table role="presentation" align="right" cellpadding="0" cellspacing="0" border="0">
+                            <tr>
+                              <td align="right" style="text-align:right;">
+                                <p class="issue-num" style="margin:0 0 3px 0;font-family:Georgia,'Times New Roman',serif;font-size:64px;font-weight:bold;color:#253b56;line-height:1;letter-spacing:-2px;text-align:right;">
+                                  #{{ issue_number }}
+                                </p>
+                                <p style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9px;color:#2d4a62;letter-spacing:3px;text-transform:uppercase;text-align:right;">
+                                  Issue
+                                </p>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
                   </td>
                 </tr>
               </table>
@@ -342,10 +355,10 @@
                FOOTER
                ================================================================ -->
           <tr>
-            <td bgcolor="#1a2332" style="background-color:#1a2332;padding:28px 32px 30px;text-align:center;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <td align="center" bgcolor="#1a2332" style="background-color:#1a2332;padding:28px 32px 30px;text-align:center;">
+              <table role="presentation" align="center" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto;">
                 <tr>
-                  <td align="center">
+                  <td align="center" style="text-align:center;">
                     <p style="margin:0 0 10px 0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:bold;color:#8a9ab0;letter-spacing:2px;text-transform:uppercase;text-align:center;">
                       Digital Procurement News Scout &nbsp;&middot;&nbsp; PepsiCo Digital Procurement
                     </p>
@@ -362,6 +375,7 @@
           </tr>
 
         </table>
+        </div>
         <!-- /Email container -->
         <!--[if mso]>
         </td></tr></table>

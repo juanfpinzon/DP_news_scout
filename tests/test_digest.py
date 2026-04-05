@@ -609,6 +609,48 @@ def test_compose_digest_derives_quick_hit_one_liner_from_article_summary() -> No
     assert digest.quick_hits[0].one_liner == "A concise summary for the quick hit."
 
 
+def test_compose_digest_falls_back_to_article_metadata_for_non_string_source_and_date() -> None:
+    articles = [build_article(1, 10), build_article(2, 9)]
+    llm_client = FakeLLMClient(
+        [
+            """
+            {
+              "top_story": {
+                "url": "https://example.com/article-1",
+                "headline": "Top headline",
+                "summary": "Top summary.",
+                "why_it_matters": "Top implication.",
+                "source": {"name": "Source 1"},
+                "date": {"value": "2026-04-01"}
+              },
+              "key_developments": [],
+              "on_our_radar": [],
+              "quick_hits": [
+                {
+                  "url": "https://example.com/article-2",
+                  "one_liner": "Quick takeaway.",
+                  "source": {"name": "Source 2"}
+                }
+              ]
+            }
+            """
+        ]
+    )
+
+    async def run() -> Digest:
+        return await compose_digest(
+            articles,
+            llm_client=llm_client,
+            settings=build_settings(),
+        )
+
+    digest = asyncio.run(run())
+
+    assert digest.top_story.source == "Source 1"
+    assert digest.top_story.date == "2026-04-01"
+    assert digest.quick_hits[0].source == "Source 2"
+
+
 def test_select_articles_balances_sources_before_filling_limit() -> None:
     articles = [
         build_article(1, 10),

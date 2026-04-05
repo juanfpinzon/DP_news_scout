@@ -264,6 +264,7 @@ def _build_user_prompt(articles: list[ScoredArticle]) -> str:
         "Do not invent articles, URLs, sources, or dates.\n"
         "Each article URL may appear at most once across all sections.\n"
         "Preserve source diversity in the final digest when the article set allows it.\n"
+        "Keep all `source` and `date` fields as plain JSON strings, never objects or arrays.\n"
         "Return strict JSON only.\n\n"
         f"{json.dumps(payload, ensure_ascii=True, indent=2)}"
     )
@@ -287,18 +288,21 @@ def _parse_digest_payload(response_text: str, articles: list[ScoredArticle]) -> 
     top_story = _parse_digest_item(
         payload.get("top_story"),
         field_name="top_story",
+        article_lookup=article_lookup,
         article_urls=article_urls,
         used_urls=used_urls,
     )
     key_developments = _parse_digest_item_list(
         payload.get("key_developments"),
         field_name="key_developments",
+        article_lookup=article_lookup,
         article_urls=article_urls,
         used_urls=used_urls,
     )
     on_our_radar = _parse_digest_item_list(
         payload.get("on_our_radar"),
         field_name="on_our_radar",
+        article_lookup=article_lookup,
         article_urls=article_urls,
         used_urls=used_urls,
     )
@@ -321,6 +325,7 @@ def _parse_digest_item_list(
     value: Any,
     *,
     field_name: str,
+    article_lookup: dict[str, ScoredArticle],
     article_urls: set[str],
     used_urls: set[str],
 ) -> list[DigestItem]:
@@ -331,6 +336,7 @@ def _parse_digest_item_list(
         _parse_digest_item(
             item,
             field_name=f"{field_name}[{index}]",
+            article_lookup=article_lookup,
             article_urls=article_urls,
             used_urls=used_urls,
         )
@@ -342,6 +348,7 @@ def _parse_digest_item(
     value: Any,
     *,
     field_name: str,
+    article_lookup: dict[str, ScoredArticle],
     article_urls: set[str],
     used_urls: set[str],
 ) -> DigestItem:
@@ -354,6 +361,7 @@ def _parse_digest_item(
         article_urls=article_urls,
         used_urls=used_urls,
     )
+    article = article_lookup[url]
 
     return DigestItem(
         url=url,
@@ -363,8 +371,15 @@ def _parse_digest_item(
             value.get("why_it_matters"),
             f"{field_name}.why_it_matters",
         ),
-        source=_require_string(value.get("source"), f"{field_name}.source"),
-        date=_require_string(value.get("date"), f"{field_name}.date", allow_empty=True),
+        source=_resolve_digest_source(
+            value.get("source"),
+            field_name=f"{field_name}.source",
+            article=article,
+        ),
+        date=_resolve_digest_date(
+            value.get("date"),
+            article=article,
+        ),
     )
 
 
@@ -398,7 +413,11 @@ def _parse_quick_hits(
                     field_name=f"{field_name}.one_liner",
                     article=article_lookup[url],
                 ),
-                source=_require_string(item.get("source"), f"{field_name}.source"),
+                source=_resolve_digest_source(
+                    item.get("source"),
+                    field_name=f"{field_name}.source",
+                    article=article_lookup[url],
+                ),
             )
         )
     return quick_hits
@@ -480,6 +499,33 @@ def _resolve_quick_hit_one_liner(
     if title.endswith((".", "!", "?")):
         return title
     return f"{title}."
+
+
+def _resolve_digest_source(
+    value: Any,
+    *,
+    field_name: str,
+    article: ScoredArticle,
+) -> str:
+    if isinstance(value, str):
+        normalized = value.strip()
+        if normalized:
+            return normalized
+
+    fallback = article.source.strip()
+    if fallback:
+        return fallback
+    raise DigestCompositionError(f"Digest payload field '{field_name}' must be a string")
+
+
+def _resolve_digest_date(
+    value: Any,
+    *,
+    article: ScoredArticle,
+) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    return (article.published_at or "").strip()
 
 
 def _unwrap_json_block(text: str) -> str:
@@ -570,7 +616,8 @@ def _build_json_repair_prompt(
         "Return exactly one valid JSON object and nothing else.\n"
         "Use only the allowed article URLs and source names listed below.\n"
         "Each URL may appear at most once across all sections.\n"
-        "Use an empty string for missing dates.\n\n"
+        "Use an empty string for missing dates.\n"
+        "Every `source` and `date` field must be a plain JSON string, never an object or array.\n\n"
         "Required JSON shape:\n"
         f"{json.dumps(required_shape, ensure_ascii=True, indent=2)}\n\n"
         "Allowed articles:\n"
