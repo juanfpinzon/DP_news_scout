@@ -165,6 +165,20 @@ class TestRenderDigest:
         assert ".mobile-body" in html
         assert "font-size: 15px;" in html
 
+    def test_header_uses_nested_right_aligned_issue_column(self) -> None:
+        html = render_digest(_make_full_digest(), issue_number=1, date="April 4, 2026")
+        assert "Nested two-column table is more reliable in Gmail than an empty spacer cell" in html
+        assert 'width="172"' in html
+        assert "table-layout:fixed" in html
+        assert '<table role="presentation" align="right"' in html
+
+    def test_footer_uses_centered_inner_table(self) -> None:
+        html = render_digest(_make_full_digest(), issue_number=1, date="April 4, 2026")
+        footer_idx = html.index("Questions or suggestions?")
+        footer_html = html[max(0, footer_idx - 400): footer_idx + 400]
+        assert 'align="center"' in footer_html
+        assert "Digital Procurement News Scout" in footer_html
+
     def test_desktop_container_width_is_configurable(self) -> None:
         html = render_digest(
             _make_full_digest(),

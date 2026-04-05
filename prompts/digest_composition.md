@@ -35,11 +35,11 @@ rather than inventing content.
   - `headline`: short, executive-friendly headline
   - `summary`: 2-3 sentence summary
   - `why_it_matters`: 1-2 sentence explanation of why this matters to PepsiCo Digital Procurement
-  - `source`: use the source name from the provided article
-  - `date`: use the provided publication date if available, otherwise an empty string
+  - `source`: use the source name from the provided article as a plain JSON string, never an object or array
+  - `date`: use the provided publication date if available, otherwise an empty string, and always return it as a plain JSON string
 - For `quick_hits`:
   - `one_liner`: a crisp one-line takeaway
-  - `source`: use the provided source name
+  - `source`: use the provided source name as a plain JSON string, never an object or array
 
 ## Output Rules
 
@@ -48,6 +48,7 @@ rather than inventing content.
 - No prose before or after the JSON
 - Preserve URLs exactly as provided
 - Do not repeat the same URL in multiple sections
+- Keep every `source` and `date` value as a JSON string literal
 
 Return this shape exactly:
 
