@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any, Callable
 
 import httpx
 
@@ -16,6 +17,7 @@ from src.fetcher.scraper import scrape_source
 from src.storage.db import save_articles
 from src.utils.config import Settings, load_config
 from src.utils.logging import get_logger
+from src.utils.progress import emit_progress
 
 FetchResult = tuple[bool, list[RawArticle]]
 
@@ -45,6 +47,7 @@ async def fetch_all_sources(
     now: datetime | None = None,
     persist_to_db: bool = True,
     use_database_seen_urls: bool = True,
+    progress_callback: Callable[[str], None] | None = None,
 ) -> list[RawArticle]:
     summary = await fetch_all_sources_report(
         sources=sources,
@@ -55,6 +58,7 @@ async def fetch_all_sources(
         now=now,
         persist_to_db=persist_to_db,
         use_database_seen_urls=use_database_seen_urls,
+        progress_callback=progress_callback,
     )
     return summary.articles
 
@@ -69,6 +73,7 @@ async def fetch_all_sources_report(
     now: datetime | None = None,
     persist_to_db: bool = True,
     use_database_seen_urls: bool = True,
+    progress_callback: Callable[[str], None] | None = None,
 ) -> FetchSummary:
     if settings is None or database_path is None:
         app_config = load_config()
@@ -97,6 +102,7 @@ async def fetch_all_sources_report(
                     robots_policy=robots_policy,
                     logger=logger,
                     now=now,
+                    progress_callback=progress_callback,
                 )
                 for source in sources
             ]
@@ -130,6 +136,13 @@ async def fetch_all_sources_report(
         persisted_to_db=persist_to_db,
         used_database_seen_urls=use_database_seen_urls,
     )
+    emit_progress(
+        progress_callback,
+        "Fetch complete: "
+        f"{sources_succeeded}/{len(sources)} sources succeeded, "
+        f"{len(raw_articles)} raw {_pluralize(len(raw_articles), 'article')}, "
+        f"{len(deduplicated_articles)} after dedup.",
+    )
     return FetchSummary(
         articles=deduplicated_articles,
         sources_attempted=len(sources),
@@ -151,6 +164,7 @@ async def _fetch_single_source(
     robots_policy: RobotsPolicy,
     logger,
     now: datetime | None,
+    progress_callback: Callable[[str], None] | None,
 ) -> FetchResult:
     async with semaphore:
         try:
@@ -171,6 +185,10 @@ async def _fetch_single_source(
                 error=str(exc),
                 error_type=type(exc).__name__,
             )
+            emit_progress(
+                progress_callback,
+                f"Source failed: {source.name} ({source.method}) - {exc}",
+            )
             return False, []
 
         logger.info(
@@ -179,6 +197,10 @@ async def _fetch_single_source(
             source_method=source.method,
             source_url=source.url,
             article_count=len(articles),
+        )
+        emit_progress(
+            progress_callback,
+            f"Fetched {source.name}: {len(articles)} {_pluralize(len(articles), 'article')}.",
         )
         return True, articles
 
@@ -214,6 +236,12 @@ def _count_fetch_results(results: Sequence[FetchResult]) -> tuple[int, int]:
     succeeded = sum(1 for success, _ in results if success)
     failed = len(results) - succeeded
     return succeeded, failed
+
+
+def _pluralize(count: int, singular: str, plural: str | None = None) -> str:
+    if count == 1:
+        return singular
+    return plural or f"{singular}s"
 
 
 __all__ = [

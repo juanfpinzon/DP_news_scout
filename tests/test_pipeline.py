@@ -188,6 +188,51 @@ def test_run_pipeline_passes_ignore_seen_db_to_fetcher(tmp_path, monkeypatch) ->
     assert captured["use_database_seen_urls"] is False
 
 
+def test_run_pipeline_ignores_progress_callback_failures(tmp_path, monkeypatch) -> None:
+    config = _build_config(tmp_path=tmp_path, dry_run=True)
+
+    monkeypatch.setattr("src.main.load_source_registry", lambda: [_make_source("Source A")])
+
+    async def fake_fetch_all_sources_report(**_kwargs):
+        return _make_fetch_summary(
+            articles=[_make_raw_article(1, source="Source A")],
+            sources_attempted=1,
+            sources_succeeded=1,
+            sources_failed=0,
+            articles_found=1,
+        )
+
+    async def fake_score_articles(*_args, **_kwargs):
+        return [_make_scored_article(1, source="Source A")]
+
+    async def fake_compose_digest(*_args, **_kwargs):
+        return _make_digest()
+
+    monkeypatch.setattr("src.main.fetch_all_sources_report", fake_fetch_all_sources_report)
+    monkeypatch.setattr("src.main.score_articles", fake_score_articles)
+    monkeypatch.setattr("src.main.compose_digest", fake_compose_digest)
+    monkeypatch.setattr("src.main.render_digest", lambda *_args, **_kwargs: "<html>digest</html>")
+    monkeypatch.setattr("src.main.render_plaintext", lambda *_args, **_kwargs: "digest")
+
+    result = run_pipeline(
+        config=config,
+        now=datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
+        progress_callback=lambda _message: (_ for _ in ()).throw(RuntimeError("progress failed")),
+    )
+
+    assert result.status == "success"
+
+    with sqlite3.connect(config.settings.database_path) as connection:
+        row = connection.execute(
+            "SELECT status, completed_at FROM pipeline_runs WHERE id = ?",
+            (result.run_id,),
+        ).fetchone()
+
+    assert row is not None
+    assert row[0] == "success"
+    assert row[1] is not None
+
+
 def test_run_pipeline_can_reuse_articles_from_database(tmp_path, monkeypatch) -> None:
     config = _build_config(tmp_path=tmp_path, dry_run=False)
     captured: dict[str, object] = {}

@@ -4,13 +4,14 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from src.analyzer.llm_client import LLMClient
 from src.fetcher.models import RawArticle
 from src.storage.db import ArticleRecord
 from src.utils.config import AppConfig, Settings, load_config
 from src.utils.logging import get_logger
+from src.utils.progress import emit_progress
 
 DEFAULT_BATCH_SIZE = 10
 DEFAULT_MAX_TOKENS = 1600
@@ -48,6 +49,7 @@ async def score_articles(
     batch_size: int = DEFAULT_BATCH_SIZE,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     logger: Any | None = None,
+    progress_callback: Callable[[str], None] | None = None,
 ) -> list[ScoredArticle]:
     if batch_size <= 0:
         raise ValueError("batch_size must be greater than 0")
@@ -140,6 +142,12 @@ async def score_articles(
                 retained_articles=retained_in_batch,
                 threshold=threshold,
             )
+            emit_progress(
+                progress_callback,
+                "Relevance batch "
+                f"{batch_index}/{total_batches} complete: kept {retained_in_batch} "
+                f"of {len(batch)} {_pluralize(len(batch), 'article')} above threshold {threshold}.",
+            )
 
         logger.info(
             "relevance_scoring_complete",
@@ -148,6 +156,11 @@ async def score_articles(
             threshold=threshold,
             batch_size=batch_size,
             total_batches=total_batches,
+        )
+        emit_progress(
+            progress_callback,
+            "Relevance scoring complete: "
+            f"{len(retained_articles)} relevant {_pluralize(len(retained_articles), 'article')} retained.",
         )
         return retained_articles
     finally:
@@ -257,6 +270,12 @@ def _normalize_score(value: Any, url: str) -> int:
             f"Score must be between 1 and 10 for article URL {url}: {score!r}"
         )
     return score
+
+
+def _pluralize(count: int, singular: str, plural: str | None = None) -> str:
+    if count == 1:
+        return singular
+    return plural or f"{singular}s"
 
 
 def _unwrap_json_block(text: str) -> str:

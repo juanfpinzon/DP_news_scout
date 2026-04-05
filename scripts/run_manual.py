@@ -7,7 +7,7 @@ import webbrowser
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Sequence
+from typing import Callable, Sequence
 
 from dotenv import load_dotenv
 
@@ -27,6 +27,7 @@ from src.sender import send_digest
 from src.storage.db import initialize_database, save_articles
 from src.utils.config import DEFAULT_ENV_FILE, AppConfig, RecipientConfig, load_config
 from src.utils.logging import configure_logging, get_logger
+from src.utils.progress import emit_progress
 
 DEFAULT_PREVIEW_PATH = Path("/tmp/preview.html")
 MANUAL_TEST_GROUP = "manual_test"
@@ -98,6 +99,17 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     config = _load_runtime_config(dry_run_override=args.dry_run if _uses_pipeline_mode(args) else None)
     configure_logging(config)
+    progress_callback = _emit_console_progress
+    emit_progress(
+        progress_callback,
+        "Starting manual run in "
+        f"{_describe_mode(args)} mode "
+        f"(dry_run={config.settings.dry_run}, ignore_seen_db={args.ignore_seen_db}, reuse_seen_db={args.reuse_seen_db}).",
+    )
+    emit_progress(
+        progress_callback,
+        f"Using database {config.settings.database_path} and log file {config.settings.log_file}.",
+    )
 
     try:
         if args.sources_only:
@@ -105,6 +117,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 config=config,
                 now=_current_time(),
                 ignore_seen_db=args.ignore_seen_db,
+                progress_callback=progress_callback,
             )
         if args.preview or args.test_email:
             return _run_render_mode(
@@ -120,6 +133,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 now=_current_time(),
                 ignore_seen_db=args.ignore_seen_db,
                 reuse_seen_db=args.reuse_seen_db,
+                progress_callback=progress_callback,
             )
 
         result = run_pipeline(
@@ -127,9 +141,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             now=_current_time(),
             ignore_seen_db=args.ignore_seen_db,
             reuse_seen_db=args.reuse_seen_db,
+            progress_callback=progress_callback,
         )
     except Exception as exc:
-        print(f"Manual run failed: {exc}")
+        _print_stdout(f"Manual run failed: {exc}")
         return 1
 
     _print_pipeline_summary(result)
@@ -164,9 +179,20 @@ def _load_runtime_config(*, dry_run_override: bool | None) -> AppConfig:
     )
 
 
-def _run_sources_only(*, config: AppConfig, now: datetime, ignore_seen_db: bool) -> int:
+def _run_sources_only(
+    *,
+    config: AppConfig,
+    now: datetime,
+    ignore_seen_db: bool,
+    progress_callback: Callable[[str], None] | None = None,
+) -> int:
     logger = get_logger(__name__, pipeline_stage="manual")
+    emit_progress(progress_callback, "Loading source registry.")
     sources = load_source_registry()
+    emit_progress(
+        progress_callback,
+        f"Fetching sources only for {len(sources)} configured {_pluralize(len(sources), 'source')}.",
+    )
     fetch_summary = asyncio.run(
         fetch_all_sources_report(
             sources=sources,
@@ -176,12 +202,13 @@ def _run_sources_only(*, config: AppConfig, now: datetime, ignore_seen_db: bool)
             now=now,
             persist_to_db=False,
             use_database_seen_urls=not ignore_seen_db,
+            progress_callback=progress_callback,
         )
     )
     raw_articles = fetch_summary.articles
 
     if fetch_summary.total_fetch_outage:
-        print("Manual fetch failed: all configured sources failed to fetch.")
+        _print_stdout("Manual fetch failed: all configured sources failed to fetch.")
         return 1
 
     logger.info(
@@ -191,7 +218,7 @@ def _run_sources_only(*, config: AppConfig, now: datetime, ignore_seen_db: bool)
         sources_failed=fetch_summary.sources_failed,
         articles_found=len(raw_articles),
     )
-    print(
+    _print_stdout(
         f"Fetched {len(raw_articles)} deduplicated articles from {len(sources)} configured sources.",
     )
     return 0
@@ -207,6 +234,7 @@ def _run_render_mode(
     now: datetime,
     ignore_seen_db: bool,
     reuse_seen_db: bool,
+    progress_callback: Callable[[str], None] | None = None,
 ) -> int:
     rendered = asyncio.run(
         _render_live_digest(
@@ -215,10 +243,11 @@ def _run_render_mode(
             ignore_seen_db=ignore_seen_db,
             reuse_seen_db=reuse_seen_db,
             persist_articles=ignore_seen_db or reuse_seen_db,
+            progress_callback=progress_callback,
         )
     )
 
-    print(
+    _print_stdout(
         f"Rendered digest for issue #{rendered.issue_number}: "
         f"{rendered.raw_article_count} fetched, "
         f"{rendered.relevant_article_count} relevant, "
@@ -227,24 +256,33 @@ def _run_render_mode(
 
     if preview:
         resolved_plaintext_path = plaintext_path or _default_plaintext_path(preview_path)
+        emit_progress(
+            progress_callback,
+            f"Saving preview files to {preview_path} and {resolved_plaintext_path}.",
+        )
         _save_preview(rendered.html, preview_path)
         _save_preview(rendered.plaintext, resolved_plaintext_path)
-        print(f"HTML preview saved to {preview_path}")
-        print(f"Plain-text preview saved to {resolved_plaintext_path}")
+        _print_stdout(f"HTML preview saved to {preview_path}")
+        _print_stdout(f"Plain-text preview saved to {resolved_plaintext_path}")
+        emit_progress(progress_callback, "Opening the HTML preview in the default browser.")
         _open_preview_in_browser(preview_path)
 
     if test_recipient:
+        emit_progress(progress_callback, f"Sending test digest to {test_recipient}.")
         test_config = _build_test_email_config(config, recipient=test_recipient)
+        send_kwargs = {"config": test_config}
+        if progress_callback is not None:
+            send_kwargs["progress_callback"] = progress_callback
         sent = send_digest(
             rendered.html,
             rendered.plaintext,
             rendered.subject,
-            config=test_config,
+            **send_kwargs,
         )
         if not sent:
-            print(f"Test email delivery failed for {test_recipient}")
+            _print_stdout(f"Test email delivery failed for {test_recipient}")
             return 1
-        print(f"Sent test digest to {test_recipient}")
+        _print_stdout(f"Sent test digest to {test_recipient}")
 
     return 0
 
@@ -256,6 +294,7 @@ async def _render_live_digest(
     ignore_seen_db: bool = False,
     reuse_seen_db: bool = False,
     persist_articles: bool = False,
+    progress_callback: Callable[[str], None] | None = None,
 ) -> RenderedDigestResult:
     initialize_database(config.settings.database_path)
     date_label = _format_display_date(now)
@@ -263,9 +302,14 @@ async def _render_live_digest(
         config.settings,
         fallback=_next_issue_number(config.settings.database_path),
     )
+    emit_progress(progress_callback, "Loading source registry.")
     sources = load_source_registry()
 
     if reuse_seen_db:
+        emit_progress(
+            progress_callback,
+            "Loading stored articles from SQLite instead of fetching live sources.",
+        )
         raw_articles = load_raw_articles_from_storage(
             database_path=config.settings.database_path,
             sources=sources,
@@ -279,7 +323,15 @@ async def _render_live_digest(
             articles_deduplicated=len(raw_articles),
             articles_saved=0,
         )
+        emit_progress(
+            progress_callback,
+            f"Loaded {len(raw_articles)} stored {_pluralize(len(raw_articles), 'article')} from SQLite.",
+        )
     else:
+        emit_progress(
+            progress_callback,
+            f"Fetching live articles from {len(sources)} configured {_pluralize(len(sources), 'source')}.",
+        )
         fetch_summary = await fetch_all_sources_report(
             sources=sources,
             settings=config.settings,
@@ -288,11 +340,16 @@ async def _render_live_digest(
             now=now,
             persist_to_db=False,
             use_database_seen_urls=not ignore_seen_db,
+            progress_callback=progress_callback,
         )
         raw_articles = fetch_summary.articles
     if fetch_summary.total_fetch_outage:
         raise RuntimeError("all configured sources failed to fetch")
     if not raw_articles:
+        emit_progress(
+            progress_callback,
+            "No articles were available after fetch and dedup. Building the no-news digest.",
+        )
         subject = _build_no_news_subject(issue_number=issue_number, date_label=date_label)
         html, plaintext = _build_no_news_email(issue_number=issue_number, date_label=date_label)
         return RenderedDigestResult(
@@ -308,21 +365,34 @@ async def _render_live_digest(
         )
 
     async with LLMClient(app_config=config, settings=config.settings) as llm_client:
+        emit_progress(
+            progress_callback,
+            "Scoring "
+            f"{len(raw_articles)} {_pluralize(len(raw_articles), 'article')} for relevance "
+            f"with {config.settings.llm_scoring_model}.",
+        )
         scored_articles = await score_articles(
             raw_articles,
             llm_client=llm_client,
             settings=config.settings,
             logger=get_logger(__name__, pipeline_stage="analyzer"),
+            progress_callback=progress_callback,
         )
 
         if not scored_articles:
             if persist_articles:
+                emit_progress(progress_callback, "Persisting fetched articles to SQLite for reuse.")
                 _persist_manual_articles(
                     database_path=config.settings.database_path,
                     raw_articles=raw_articles,
                     scored_articles=[],
                     digest=None,
                 )
+                emit_progress(progress_callback, "SQLite article persistence complete.")
+            emit_progress(
+                progress_callback,
+                "No articles cleared the relevance threshold. Building the no-news digest.",
+            )
             subject = _build_no_news_subject(issue_number=issue_number, date_label=date_label)
             html, plaintext = _build_no_news_email(issue_number=issue_number, date_label=date_label)
             return RenderedDigestResult(
@@ -337,21 +407,31 @@ async def _render_live_digest(
                 no_news=True,
             )
 
+        emit_progress(
+            progress_callback,
+            "Composing digest from "
+            f"{len(scored_articles)} relevant {_pluralize(len(scored_articles), 'article')} "
+            f"with {config.settings.llm_digest_model}.",
+        )
         digest = await compose_digest(
             scored_articles,
             llm_client=llm_client,
             settings=config.settings,
             logger=get_logger(__name__, pipeline_stage="analyzer"),
+            progress_callback=progress_callback,
         )
 
     if persist_articles:
+        emit_progress(progress_callback, "Persisting fetched articles to SQLite for reuse.")
         _persist_manual_articles(
             database_path=config.settings.database_path,
             raw_articles=raw_articles,
             scored_articles=scored_articles,
             digest=digest,
         )
+        emit_progress(progress_callback, "SQLite article persistence complete.")
 
+    emit_progress(progress_callback, "Rendering HTML and plain-text digest output.")
     html = render_digest(
         digest,
         issue_number=issue_number,
@@ -359,6 +439,11 @@ async def _render_live_digest(
         max_width_px=config.settings.email_max_width_px,
     )
     plaintext = render_plaintext(digest, issue_number=issue_number, date=date_label)
+    included_article_count = _count_digest_articles(digest)
+    emit_progress(
+        progress_callback,
+        f"Renderer complete: {included_article_count} {_pluralize(included_article_count, 'item')} included in the digest.",
+    )
     return RenderedDigestResult(
         issue_number=issue_number,
         date_label=date_label,
@@ -367,7 +452,7 @@ async def _render_live_digest(
         plaintext=plaintext,
         raw_article_count=len(raw_articles),
         relevant_article_count=len(scored_articles),
-        included_article_count=_count_digest_articles(digest),
+        included_article_count=included_article_count,
         no_news=False,
     )
 
@@ -424,17 +509,17 @@ def _open_preview_in_browser(preview_path: Path) -> None:
     try:
         opened = webbrowser.open(preview_path.resolve().as_uri())
     except Exception:
-        print("Could not open the preview automatically; open the saved file manually.")
+        _print_stdout("Could not open the preview automatically; open the saved file manually.")
         return
 
     if not opened:
-        print("Could not open the preview automatically; open the saved file manually.")
+        _print_stdout("Could not open the preview automatically; open the saved file manually.")
 
 
 def _print_pipeline_summary(result: PipelineResult) -> None:
     if result.status == "success":
         mode_label = "Dry-run" if result.dry_run else "Pipeline"
-        print(
+        _print_stdout(
             f"{mode_label} completed: issue #{result.issue_number}, "
             f"{result.articles_found} fetched, "
             f"{result.relevant_articles} relevant, "
@@ -443,7 +528,7 @@ def _print_pipeline_summary(result: PipelineResult) -> None:
         )
         return
 
-    print(
+    _print_stdout(
         f"Pipeline failed: issue #{result.issue_number}, "
         f"status={result.status}, "
         f"error={result.error or 'unknown error'}.",
@@ -504,6 +589,33 @@ def _format_display_date(current_time: datetime) -> str:
 
 def _current_time() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _describe_mode(args: argparse.Namespace) -> str:
+    if args.sources_only:
+        return "sources-only"
+    if args.preview:
+        return "preview"
+    if args.test_email:
+        return "test-email"
+    if args.dry_run:
+        return "dry-run"
+    return "pipeline"
+
+
+def _emit_console_progress(message: str) -> None:
+    timestamp = datetime.now().astimezone().strftime("%H:%M:%S")
+    _print_stdout(f"[{timestamp}] {message}")
+
+
+def _print_stdout(message: str) -> None:
+    print(message, flush=True)
+
+
+def _pluralize(count: int, singular: str, plural: str | None = None) -> str:
+    if count == 1:
+        return singular
+    return plural or f"{singular}s"
 
 
 if __name__ == "__main__":

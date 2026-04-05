@@ -5,12 +5,13 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from src.analyzer.llm_client import LLMClient
 from src.analyzer.relevance import ScoredArticle
 from src.utils.config import AppConfig, Settings, load_config
 from src.utils.logging import get_logger
+from src.utils.progress import emit_progress
 
 DEFAULT_MAX_TOKENS = 2600
 MAX_JSON_ATTEMPTS = 3
@@ -56,6 +57,7 @@ async def compose_digest(
     max_articles: int | None = None,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     logger: Any | None = None,
+    progress_callback: Callable[[str], None] | None = None,
 ) -> Digest:
     if not articles:
         raise ValueError("compose_digest requires at least one scored article")
@@ -121,6 +123,11 @@ async def compose_digest(
                         selected_articles=len(selected_articles),
                         error=str(exc),
                     )
+                    emit_progress(
+                        progress_callback,
+                        "Digest composition returned invalid JSON; retrying "
+                        f"({attempt + 1}/{MAX_JSON_ATTEMPTS}).",
+                    )
                     prompt_to_send = _build_json_repair_prompt(
                         articles=selected_articles,
                         invalid_response=response_text,
@@ -143,6 +150,13 @@ async def compose_digest(
             key_developments=len(digest.key_developments),
             on_our_radar=len(digest.on_our_radar),
             quick_hits=len(digest.quick_hits),
+        )
+        emit_progress(
+            progress_callback,
+            "Digest composition complete: "
+            f"{len(digest.key_developments)} key developments, "
+            f"{len(digest.on_our_radar)} on our radar, "
+            f"{len(digest.quick_hits)} quick hits.",
         )
         return digest
     finally:

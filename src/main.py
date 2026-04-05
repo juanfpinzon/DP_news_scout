@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -21,6 +22,7 @@ from src.storage.db import (
 )
 from src.utils.config import AppConfig, load_config
 from src.utils.logging import configure_logging, get_logger
+from src.utils.progress import emit_progress
 
 DEFAULT_SUBJECT_PREFIX = "Digital Procurement News Scout"
 
@@ -48,6 +50,7 @@ def run_pipeline(
     now: datetime | None = None,
     ignore_seen_db: bool = False,
     reuse_seen_db: bool = False,
+    progress_callback: Callable[[str], None] | None = None,
 ) -> PipelineResult:
     _validate_fetch_mode(ignore_seen_db=ignore_seen_db, reuse_seen_db=reuse_seen_db)
     config = config or load_config()
@@ -75,6 +78,7 @@ def run_pipeline(
         sources = load_source_registry()
     except Exception as exc:
         error = f"source registry stage failed: {exc}"
+        _report_progress(progress_callback, f"Source registry failed: {exc}")
         _log_pipeline_stage_failure(
             logger=logger,
             run_id=run_id,
@@ -100,6 +104,10 @@ def run_pipeline(
             logger=logger,
         )
 
+    _report_progress(
+        progress_callback,
+        f"Loaded {len(sources)} configured {_pluralize(len(sources), 'source')} for issue #{issue_number}.",
+    )
     logger.info(
         "pipeline_started",
         run_id=run_id,
@@ -126,6 +134,7 @@ def run_pipeline(
                     now=now,
                     ignore_seen_db=ignore_seen_db,
                     reuse_seen_db=reuse_seen_db,
+                    progress_callback=progress_callback,
                 ),
                 timeout=config.settings.pipeline_timeout,
             )
@@ -134,6 +143,7 @@ def run_pipeline(
         error = (
             f"Pipeline timed out after {config.settings.pipeline_timeout} seconds"
         )
+        _report_progress(progress_callback, error)
         _log_pipeline_stage_failure(
             logger=logger,
             run_id=run_id,
@@ -160,6 +170,7 @@ def run_pipeline(
         )
     except Exception as exc:
         error = f"pipeline orchestration failed: {exc}"
+        _report_progress(progress_callback, f"Pipeline orchestration failed: {exc}")
         _log_pipeline_stage_failure(
             logger=logger,
             run_id=run_id,
@@ -199,6 +210,7 @@ async def _run_pipeline_async(
     now: datetime | None,
     ignore_seen_db: bool,
     reuse_seen_db: bool,
+    progress_callback: Callable[[str], None] | None,
 ) -> PipelineResult:
     date_label = _format_display_date(now)
     subject = _build_digest_subject(issue_number=issue_number, date_label=date_label)
@@ -221,6 +233,10 @@ async def _run_pipeline_async(
 
     try:
         if reuse_seen_db:
+            _report_progress(
+                progress_callback,
+                "Loading stored articles from SQLite instead of fetching live sources.",
+            )
             raw_articles = load_raw_articles_from_storage(
                 database_path=config.settings.database_path,
                 sources=sources,
@@ -240,7 +256,15 @@ async def _run_pipeline_async(
                 issue_number=issue_number,
                 article_count=len(raw_articles),
             )
+            _report_progress(
+                progress_callback,
+                f"Loaded {len(raw_articles)} stored {_pluralize(len(raw_articles), 'article')} from SQLite.",
+            )
         else:
+            _report_progress(
+                progress_callback,
+                f"Fetching live articles from {len(sources)} configured {_pluralize(len(sources), 'source')}.",
+            )
             fetch_summary = await fetch_all_sources_report(
                 sources=sources,
                 settings=config.settings,
@@ -249,12 +273,14 @@ async def _run_pipeline_async(
                 now=now,
                 persist_to_db=False,
                 use_database_seen_urls=not ignore_seen_db,
+                progress_callback=progress_callback,
             )
             raw_articles = fetch_summary.articles
     except Exception as exc:
         status = "failed"
         stage_name = "stored_article_reuse" if reuse_seen_db else "fetcher"
         error = f"{stage_name} stage failed: {exc}"
+        _report_progress(progress_callback, error)
         _log_pipeline_stage_failure(
             logger=logger,
             run_id=run_id,
@@ -283,6 +309,7 @@ async def _run_pipeline_async(
     if not reuse_seen_db and fetch_summary.total_fetch_outage:
         status = "failed"
         error = "fetcher stage failed: all configured sources failed to fetch"
+        _report_progress(progress_callback, error)
         _log_pipeline_stage_failure(
             logger=logger,
             run_id=run_id,
@@ -311,14 +338,22 @@ async def _run_pipeline_async(
 
     if raw_articles:
         try:
+            _report_progress(
+                progress_callback,
+                "Scoring "
+                f"{len(raw_articles)} {_pluralize(len(raw_articles), 'article')} for relevance "
+                f"with {config.settings.llm_scoring_model}.",
+            )
             scored_articles = await score_articles(
                 raw_articles,
                 settings=config.settings,
                 logger=get_logger(__name__, pipeline_stage="analyzer"),
+                progress_callback=progress_callback,
             )
         except Exception as exc:
             status = "failed"
             error = f"analyzer relevance stage failed: {exc}"
+            _report_progress(progress_callback, error)
             _log_pipeline_stage_failure(
                 logger=logger,
                 run_id=run_id,
@@ -346,14 +381,22 @@ async def _run_pipeline_async(
 
     if scored_articles:
         try:
+            _report_progress(
+                progress_callback,
+                "Composing digest from "
+                f"{len(scored_articles)} relevant {_pluralize(len(scored_articles), 'article')} "
+                f"with {config.settings.llm_digest_model}.",
+            )
             digest = await compose_digest(
                 scored_articles,
                 settings=config.settings,
                 logger=get_logger(__name__, pipeline_stage="analyzer"),
+                progress_callback=progress_callback,
             )
         except Exception as exc:
             status = "failed"
             error = f"digest composition stage failed: {exc}"
+            _report_progress(progress_callback, error)
             _log_pipeline_stage_failure(
                 logger=logger,
                 run_id=run_id,
@@ -380,6 +423,10 @@ async def _run_pipeline_async(
             )
 
         try:
+            _report_progress(
+                progress_callback,
+                "Rendering HTML and plain-text digest output.",
+            )
             html = render_digest(
                 digest,
                 issue_number=issue_number,
@@ -390,6 +437,7 @@ async def _run_pipeline_async(
         except Exception as exc:
             status = "failed"
             error = f"renderer stage failed: {exc}"
+            _report_progress(progress_callback, error)
             _log_pipeline_stage_failure(
                 logger=logger,
                 run_id=run_id,
@@ -416,11 +464,20 @@ async def _run_pipeline_async(
             )
 
         articles_included = _count_digest_articles(digest)
+        _report_progress(
+            progress_callback,
+            f"Renderer complete: {articles_included} {_pluralize(articles_included, 'item')} included in the digest.",
+        )
     else:
+        _report_progress(
+            progress_callback,
+            "No articles cleared the relevance threshold. Building the no-news digest.",
+        )
         html, plaintext = _build_no_news_email(issue_number=issue_number, date_label=date_label)
         subject = _build_no_news_subject(issue_number=issue_number, date_label=date_label)
 
     if config.settings.dry_run:
+        _report_progress(progress_callback, "Send stage skipped because dry-run is enabled.")
         logger.info(
             "pipeline_send_skipped",
             run_id=run_id,
@@ -430,16 +487,23 @@ async def _run_pipeline_async(
         )
     else:
         try:
+            _report_progress(progress_callback, "Starting email delivery.")
+            send_kwargs: dict[str, Any] = {
+                "config": config,
+                "run_id": run_id,
+            }
+            if progress_callback is not None:
+                send_kwargs["progress_callback"] = progress_callback
             email_sent = send_digest(
                 html,
                 plaintext,
                 subject,
-                config=config,
-                run_id=run_id,
+                **send_kwargs,
             )
         except Exception as exc:
             status = "failed"
             error = f"sender stage failed: {exc}"
+            _report_progress(progress_callback, error)
             _log_pipeline_stage_failure(
                 logger=logger,
                 run_id=run_id,
@@ -452,6 +516,7 @@ async def _run_pipeline_async(
             if not email_sent:
                 status = "failed"
                 error = "sender stage returned unsuccessful delivery status"
+                _report_progress(progress_callback, error)
                 _log_pipeline_stage_failure(
                     logger=logger,
                     run_id=run_id,
@@ -462,6 +527,7 @@ async def _run_pipeline_async(
 
     if status == "success" and email_sent:
         try:
+            _report_progress(progress_callback, "Persisting fetched article state to SQLite.")
             _persist_seen_articles(
                 database_path=config.settings.database_path,
                 raw_articles=raw_articles,
@@ -471,6 +537,7 @@ async def _run_pipeline_async(
                 run_id=run_id,
                 issue_number=issue_number,
             )
+            _report_progress(progress_callback, "SQLite article persistence complete.")
         except Exception as exc:
             logger.warning(
                 "pipeline_article_persistence_failed",
@@ -716,6 +783,19 @@ def _article_record_to_raw_article(
         summary=record.content_snippet,
         author=None,
     )
+
+
+def _report_progress(
+    progress_callback: Callable[[str], None] | None,
+    message: str,
+) -> None:
+    emit_progress(progress_callback, message)
+
+
+def _pluralize(count: int, singular: str, plural: str | None = None) -> str:
+    if count == 1:
+        return singular
+    return plural or f"{singular}s"
 
 
 def main() -> None:
