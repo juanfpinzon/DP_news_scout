@@ -73,6 +73,7 @@ max_digest_items_per_source: 3
 llm_scoring_model: anthropic/claude-haiku-4.5
 llm_digest_model: anthropic/claude-sonnet-4-6
 llm_model_fallback: anthropic/claude-haiku-4.5
+rss_lookback_hours: 168
 dedup_window_days: 7
 email_max_width_px: 880
 issue_number_override: 0
@@ -85,6 +86,7 @@ Meaning:
 - `llm_scoring_model`: primary model used for batched relevance scoring.
 - `llm_digest_model`: primary model used for final digest composition.
 - `llm_model_fallback`: shared fallback model used by both analyzer stages on retry/fallback conditions.
+- `rss_lookback_hours`: live fetch freshness window for RSS and scrape ingestion, currently 7 days.
 - `dedup_window_days`: recent URL dedup window against SQLite.
 - `email_max_width_px`: desktop max width for the HTML digest.
 - `issue_number_override`: when set, overrides dynamic issue numbering. Remove it or set it to `null` to restore dynamic numbering later.
@@ -105,6 +107,7 @@ MAX_DIGEST_ITEMS_PER_SOURCE=3
 LLM_SCORING_MODEL=anthropic/claude-haiku-4.5
 LLM_DIGEST_MODEL=anthropic/claude-sonnet-4-6
 LLM_MODEL_FALLBACK=anthropic/claude-haiku-4.5
+RSS_LOOKBACK_HOURS=168
 EMAIL_MAX_WIDTH_PX=880
 ISSUE_NUMBER_OVERRIDE=0
 ```

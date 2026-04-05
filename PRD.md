@@ -151,7 +151,7 @@ The digest should read like a **trusted advisor's morning brief**, not a raw RSS
 | F-01 | Fetch latest articles from all Tier 1–3 sources via RSS, web scraping, or API | P0 |
 | F-02 | Maintain a source registry (URL, type, tier, scraping method, selectors) | P0 |
 | F-03 | Deduplicate articles across sources (same story covered by multiple outlets) | P0 |
-| F-04 | Filter to articles published in the last 24–48 hours | P0 |
+| F-04 | Filter to articles published in the last 7 days | P0 |
 | F-05 | Handle source failures gracefully — log errors, continue with remaining sources | P0 |
 | F-06 | Store raw fetched articles in a local DB/file store with metadata | P1 |
 | F-07 | Respect robots.txt and rate limits per source | P0 |

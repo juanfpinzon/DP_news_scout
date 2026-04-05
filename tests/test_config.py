@@ -20,7 +20,7 @@ def test_load_config_reads_defaults() -> None:
 
     assert config.settings.max_articles_per_source == 10
     assert config.settings.fetch_concurrency == 5
-    assert config.settings.rss_lookback_hours == 48
+    assert config.settings.rss_lookback_hours == 168
     assert config.settings.dedup_window_days == 7
     assert config.settings.max_digest_items_per_source == 3
     assert config.settings.email_max_width_px == 880

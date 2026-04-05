@@ -178,7 +178,7 @@ Build src/fetcher/rss.py:
   - async function fetch_rss(source: Source) -> list[RawArticle]
   - Use feedparser to parse RSS/Atom feeds
   - Extract: title, url, published_date, summary/description, author
-  - Filter to last 48 hours
+  - Filter to last 7 days
   - Handle feed errors gracefully (timeout, malformed XML, 404)
   - Return normalized RawArticle dataclass
 ```

@@ -99,6 +99,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     config = _load_runtime_config(dry_run_override=args.dry_run if _uses_pipeline_mode(args) else None)
     configure_logging(config)
+    current_time = _current_time()
     progress_callback = _emit_console_progress
     emit_progress(
         progress_callback,
@@ -115,7 +116,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.sources_only:
             return _run_sources_only(
                 config=config,
-                now=_current_time(),
+                now=current_time,
                 ignore_seen_db=args.ignore_seen_db,
                 progress_callback=progress_callback,
             )
@@ -130,7 +131,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     else None
                 ),
                 test_recipient=args.test_email,
-                now=_current_time(),
+                now=current_time,
                 ignore_seen_db=args.ignore_seen_db,
                 reuse_seen_db=args.reuse_seen_db,
                 progress_callback=progress_callback,
@@ -138,9 +139,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         result = run_pipeline(
             config=config,
-            now=_current_time(),
+            now=current_time,
             ignore_seen_db=args.ignore_seen_db,
             reuse_seen_db=args.reuse_seen_db,
+            subject_suffix=(
+                None
+                if config.settings.dry_run
+                else _build_manual_subject_suffix(now=current_time, label="Manual run")
+            ),
             progress_callback=progress_callback,
         )
     except Exception as exc:
@@ -276,7 +282,10 @@ def _run_render_mode(
         sent = send_digest(
             rendered.html,
             rendered.plaintext,
-            rendered.subject,
+            _append_subject_suffix(
+                rendered.subject,
+                _build_manual_subject_suffix(now=now, label="Manual test"),
+            ),
             **send_kwargs,
         )
         if not sent:
@@ -561,6 +570,17 @@ def _build_digest_subject(*, issue_number: int, date_label: str) -> str:
 
 def _build_no_news_subject(*, issue_number: int, date_label: str) -> str:
     return f"{DEFAULT_SUBJECT_PREFIX} | {date_label} | No major updates | Issue #{issue_number}"
+
+
+def _build_manual_subject_suffix(*, now: datetime, label: str) -> str:
+    tz_label = now.tzname() or "UTC"
+    return f"{label} {now.strftime('%H:%M:%S')} {tz_label}"
+
+
+def _append_subject_suffix(subject: str, subject_suffix: str | None) -> str:
+    if not subject_suffix:
+        return subject
+    return f"{subject} | {subject_suffix}"
 
 
 def _build_no_news_email(*, issue_number: int, date_label: str) -> tuple[str, str]:

@@ -41,11 +41,20 @@ def test_main_dry_run_overrides_pipeline_config(
         lambda: datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
     )
 
-    def fake_run_pipeline(*, config, now, ignore_seen_db, reuse_seen_db, progress_callback):
+    def fake_run_pipeline(
+        *,
+        config,
+        now,
+        ignore_seen_db,
+        reuse_seen_db,
+        subject_suffix,
+        progress_callback,
+    ):
         captured["config"] = config
         captured["now"] = now
         captured["ignore_seen_db"] = ignore_seen_db
         captured["reuse_seen_db"] = reuse_seen_db
+        captured["subject_suffix"] = subject_suffix
         captured["progress_callback"] = progress_callback
         return PipelineResult(
             run_id=1,
@@ -68,6 +77,7 @@ def test_main_dry_run_overrides_pipeline_config(
 
     assert exit_code == 0
     assert captured["config"].settings.dry_run is True
+    assert captured["subject_suffix"] is None
     assert callable(captured["progress_callback"])
 
     captured_output = capsys.readouterr()
@@ -90,9 +100,18 @@ def test_main_passes_testing_fetch_flags_to_run_pipeline(
         lambda: datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
     )
 
-    def fake_run_pipeline(*, config, now, ignore_seen_db, reuse_seen_db, progress_callback):
+    def fake_run_pipeline(
+        *,
+        config,
+        now,
+        ignore_seen_db,
+        reuse_seen_db,
+        subject_suffix,
+        progress_callback,
+    ):
         captured["ignore_seen_db"] = ignore_seen_db
         captured["reuse_seen_db"] = reuse_seen_db
+        captured["subject_suffix"] = subject_suffix
         captured["progress_callback"] = progress_callback
         return PipelineResult(
             run_id=1,
@@ -116,6 +135,7 @@ def test_main_passes_testing_fetch_flags_to_run_pipeline(
     assert exit_code == 0
     assert captured["ignore_seen_db"] is True
     assert captured["reuse_seen_db"] is False
+    assert captured["subject_suffix"] == "Manual run 08:00:00 UTC"
     assert callable(captured["progress_callback"])
 
 
@@ -264,7 +284,7 @@ def test_main_test_email_sends_only_to_requested_recipient(
     assert exit_code == 0
     assert sent["html"] == "<html>digest</html>"
     assert sent["plaintext"] == "digest text"
-    assert sent["subject"] == "Subject"
+    assert sent["subject"] == "Subject | Manual test 08:00:00 UTC"
     assert sent["config"].default_recipient_group == run_manual_module.MANUAL_TEST_GROUP
     assert [recipient.email for recipient in sent["config"].recipients] == ["reviewer@example.com"]
     assert list(sent["config"].recipient_groups) == [run_manual_module.MANUAL_TEST_GROUP]

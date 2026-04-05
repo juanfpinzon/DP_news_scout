@@ -508,6 +508,144 @@ def test_scrape_source_recovers_missing_listing_dates_from_detail_pages() -> Non
     assert articles[0].published_at == "2026-03-30T06:30:00+00:00"
 
 
+def test_scrape_source_recovers_missing_listing_dates_with_managed_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime(2026, 3, 31, 9, 0, tzinfo=timezone.utc)
+    listing_html = dedent(
+        """
+        <html>
+          <body>
+            <main>
+              <article>
+                <h2><a href="/insights/fresh-story">Fresh Story</a></h2>
+                <p>Fresh summary.</p>
+              </article>
+              <article>
+                <h2><a href="/insights/stale-story">Stale Story</a></h2>
+                <p>Stale summary.</p>
+              </article>
+            </main>
+          </body>
+        </html>
+        """
+    ).strip()
+    fresh_detail_html = dedent(
+        """
+        <html>
+          <head>
+            <script type="application/ld+json">
+              {"datePublished": "2026-03-30T06:30:00+00:00"}
+            </script>
+          </head>
+        </html>
+        """
+    ).strip()
+    stale_detail_html = dedent(
+        """
+        <html>
+          <head>
+            <script type="application/ld+json">
+              {"datePublished": "2026-03-01T06:30:00+00:00"}
+            </script>
+          </head>
+        </html>
+        """
+    ).strip()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/insights":
+            return httpx.Response(200, text=listing_html)
+        if request.url.path == "/insights/fresh-story":
+            return httpx.Response(200, text=fresh_detail_html)
+        if request.url.path == "/insights/stale-story":
+            return httpx.Response(200, text=stale_detail_html)
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    real_async_client = httpx.AsyncClient
+
+    def build_client(*args, **kwargs):
+        kwargs["transport"] = httpx.MockTransport(handler)
+        return real_async_client(*args, **kwargs)
+
+    monkeypatch.setattr("src.fetcher.common.httpx.AsyncClient", build_client)
+
+    source = Source(
+        name="Example Scrape",
+        url="https://example.com/insights",
+        tier=1,
+        method="scrape",
+        active=True,
+        category="consulting",
+        selectors={
+            "article": "article",
+            "title": "h2",
+            "link": "a[href]",
+            "summary": "p",
+        },
+    )
+
+    articles = asyncio.run(scrape_source(source, now=now))
+
+    assert [article.url for article in articles] == ["https://example.com/insights/fresh-story"]
+    assert articles[0].published_at == "2026-03-30T06:30:00+00:00"
+
+
+def test_scrape_source_drops_entries_when_no_listing_or_detail_date_can_be_found(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime(2026, 3, 31, 9, 0, tzinfo=timezone.utc)
+    listing_html = dedent(
+        """
+        <html>
+          <body>
+            <main>
+              <article>
+                <h2><a href="/insights/undated-story">Undated Story</a></h2>
+                <p>Undated summary.</p>
+              </article>
+            </main>
+          </body>
+        </html>
+        """
+    ).strip()
+    undated_detail_html = "<html><body><h1>Undated Story</h1></body></html>"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/insights":
+            return httpx.Response(200, text=listing_html)
+        if request.url.path == "/insights/undated-story":
+            return httpx.Response(200, text=undated_detail_html)
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    real_async_client = httpx.AsyncClient
+
+    def build_client(*args, **kwargs):
+        kwargs["transport"] = httpx.MockTransport(handler)
+        return real_async_client(*args, **kwargs)
+
+    monkeypatch.setattr("src.fetcher.common.httpx.AsyncClient", build_client)
+
+    source = Source(
+        name="Example Scrape",
+        url="https://example.com/insights",
+        tier=1,
+        method="scrape",
+        active=True,
+        category="consulting",
+        selectors={
+            "article": "article",
+            "title": "h2",
+            "link": "a[href]",
+            "summary": "p",
+        },
+    )
+
+    articles = asyncio.run(scrape_source(source, now=now))
+
+    assert articles == []
+
+
 def test_scrape_source_falls_back_to_anchor_scan_and_meta_author() -> None:
     now = datetime(2026, 3, 31, 9, 0, tzinfo=timezone.utc)
     html = dedent(

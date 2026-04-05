@@ -51,6 +51,7 @@ def run_pipeline(
     now: datetime | None = None,
     ignore_seen_db: bool = False,
     reuse_seen_db: bool = False,
+    subject_suffix: str | None = None,
     progress_callback: Callable[[str], None] | None = None,
 ) -> PipelineResult:
     _validate_fetch_mode(ignore_seen_db=ignore_seen_db, reuse_seen_db=reuse_seen_db)
@@ -62,6 +63,7 @@ def run_pipeline(
     default_subject = _build_digest_subject(
         issue_number=resolve_issue_number(config.settings, fallback=1),
         date_label=date_label,
+        subject_suffix=subject_suffix,
     )
 
     run_id = log_run(
@@ -73,7 +75,11 @@ def run_pipeline(
         ),
     )
     issue_number = resolve_issue_number(config.settings, fallback=run_id)
-    default_subject = _build_digest_subject(issue_number=issue_number, date_label=date_label)
+    default_subject = _build_digest_subject(
+        issue_number=issue_number,
+        date_label=date_label,
+        subject_suffix=subject_suffix,
+    )
 
     try:
         sources = load_source_registry()
@@ -135,6 +141,7 @@ def run_pipeline(
                     now=now,
                     ignore_seen_db=ignore_seen_db,
                     reuse_seen_db=reuse_seen_db,
+                    subject_suffix=subject_suffix,
                     progress_callback=progress_callback,
                 ),
                 timeout=config.settings.pipeline_timeout,
@@ -211,10 +218,15 @@ async def _run_pipeline_async(
     now: datetime | None,
     ignore_seen_db: bool,
     reuse_seen_db: bool,
+    subject_suffix: str | None,
     progress_callback: Callable[[str], None] | None,
 ) -> PipelineResult:
     date_label = _format_display_date(now)
-    subject = _build_digest_subject(issue_number=issue_number, date_label=date_label)
+    subject = _build_digest_subject(
+        issue_number=issue_number,
+        date_label=date_label,
+        subject_suffix=subject_suffix,
+    )
     fetch_summary = FetchSummary(
         articles=[],
         sources_attempted=len(sources),
@@ -479,7 +491,11 @@ async def _run_pipeline_async(
             "No articles cleared the relevance threshold. Building the no-news digest.",
         )
         html, plaintext = _build_no_news_email(issue_number=issue_number, date_label=date_label)
-        subject = _build_no_news_subject(issue_number=issue_number, date_label=date_label)
+        subject = _build_no_news_subject(
+            issue_number=issue_number,
+            date_label=date_label,
+            subject_suffix=subject_suffix,
+        )
 
     if config.settings.dry_run:
         _report_progress(progress_callback, "Send stage skipped because dry-run is enabled.")
@@ -710,12 +726,32 @@ def _collect_included_urls(digest: Digest) -> set[str]:
     }
 
 
-def _build_digest_subject(*, issue_number: int, date_label: str) -> str:
-    return f"{DEFAULT_SUBJECT_PREFIX} | {date_label} | Issue #{issue_number}"
+def _build_digest_subject(
+    *,
+    issue_number: int,
+    date_label: str,
+    subject_suffix: str | None = None,
+) -> str:
+    subject = f"{DEFAULT_SUBJECT_PREFIX} | {date_label} | Issue #{issue_number}"
+    return _append_subject_suffix(subject, subject_suffix)
 
 
-def _build_no_news_subject(*, issue_number: int, date_label: str) -> str:
-    return f"{DEFAULT_SUBJECT_PREFIX} | {date_label} | No major updates | Issue #{issue_number}"
+def _build_no_news_subject(
+    *,
+    issue_number: int,
+    date_label: str,
+    subject_suffix: str | None = None,
+) -> str:
+    subject = (
+        f"{DEFAULT_SUBJECT_PREFIX} | {date_label} | No major updates | Issue #{issue_number}"
+    )
+    return _append_subject_suffix(subject, subject_suffix)
+
+
+def _append_subject_suffix(subject: str, subject_suffix: str | None) -> str:
+    if not subject_suffix:
+        return subject
+    return f"{subject} | {subject_suffix}"
 
 
 def _build_no_news_email(*, issue_number: int, date_label: str) -> tuple[str, str]:
@@ -772,7 +808,11 @@ def load_raw_articles_from_storage(
     recent_articles = [
         _article_record_to_raw_article(record, source_lookup=source_lookup)
         for record in stored_articles
-        if _record_is_recent_enough(record, cutoff=cutoff)
+        if _record_is_recent_enough(
+            record,
+            cutoff=cutoff,
+            source_lookup=source_lookup,
+        )
     ]
     if not recent_articles:
         raise ValueError("no recent stored articles available in the database")
@@ -809,9 +849,21 @@ def _record_is_recent_enough(
     record: ArticleRecord,
     *,
     cutoff: datetime,
+    source_lookup: dict[str, Any],
 ) -> bool:
-    reference_time = parse_datetime(record.published_at) or parse_datetime(record.fetched_at)
-    return reference_time is not None and reference_time >= cutoff
+    published_time = parse_datetime(record.published_at)
+    if published_time is not None:
+        return published_time >= cutoff
+
+    source = source_lookup.get(record.source.strip().casefold())
+    if getattr(source, "method", None) == "scrape":
+        # Scraped entries without a resolved publication date are unreliable for
+        # reuse mode: an old post can look "fresh" solely because it was fetched
+        # recently. Exclude them until a real publication date is available.
+        return False
+
+    fetched_time = parse_datetime(record.fetched_at)
+    return fetched_time is not None and fetched_time >= cutoff
 
 
 def _report_progress(

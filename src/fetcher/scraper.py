@@ -129,54 +129,54 @@ async def scrape_source(
                 f"Failed to fetch source page for {source.name}: {source.url}"
             ) from exc
 
-    soup = BeautifulSoup(response.text, "html.parser")
-    articles = _parse_article_containers(
-        soup=soup,
-        source=source,
-        now=active_now,
-        lookback_hours=lookback_hours,
-        max_articles=max_articles,
-    )
-    articles = await _recover_missing_dates(
-        articles=articles,
-        source=source,
-        client=active_client,
-        now=active_now,
-        lookback_hours=lookback_hours,
-        max_articles=max_articles,
-        rate_limiter=rate_limiter,
-        robots_policy=robots_policy,
-    )
-    if articles:
-        return articles
-
-    fallback_articles = _fallback_anchor_scan(
-        soup=soup,
-        source=source,
-        now=active_now,
-        lookback_hours=lookback_hours,
-        max_articles=max_articles,
-    )
-    fallback_articles = await _recover_missing_dates(
-        articles=fallback_articles,
-        source=source,
-        client=active_client,
-        now=active_now,
-        lookback_hours=lookback_hours,
-        max_articles=max_articles,
-        rate_limiter=rate_limiter,
-        robots_policy=robots_policy,
-    )
-    if fallback_articles:
-        return fallback_articles
-
-    if _looks_like_javascript_rendered_page(soup, response.text):
-        raise JavaScriptRenderedPageError(
-            f"{source.name} appears to rely on client-side rendering and may require "
-            f"Playwright or another browser-based fetcher: {source.url}"
+        soup = BeautifulSoup(response.text, "html.parser")
+        articles = _parse_article_containers(
+            soup=soup,
+            source=source,
+            now=active_now,
+            lookback_hours=lookback_hours,
+            max_articles=max_articles,
         )
+        articles = await _recover_missing_dates(
+            articles=articles,
+            source=source,
+            client=active_client,
+            now=active_now,
+            lookback_hours=lookback_hours,
+            max_articles=max_articles,
+            rate_limiter=rate_limiter,
+            robots_policy=robots_policy,
+        )
+        if articles:
+            return articles
 
-    return []
+        fallback_articles = _fallback_anchor_scan(
+            soup=soup,
+            source=source,
+            now=active_now,
+            lookback_hours=lookback_hours,
+            max_articles=max_articles,
+        )
+        fallback_articles = await _recover_missing_dates(
+            articles=fallback_articles,
+            source=source,
+            client=active_client,
+            now=active_now,
+            lookback_hours=lookback_hours,
+            max_articles=max_articles,
+            rate_limiter=rate_limiter,
+            robots_policy=robots_policy,
+        )
+        if fallback_articles:
+            return fallback_articles
+
+        if _looks_like_javascript_rendered_page(soup, response.text):
+            raise JavaScriptRenderedPageError(
+                f"{source.name} appears to rely on client-side rendering and may require "
+                f"Playwright or another browser-based fetcher: {source.url}"
+            )
+
+        return []
 
 
 def _parse_article_containers(
@@ -315,7 +315,8 @@ async def _recover_missing_dates(
     filtered = [
         article
         for article in articles
-        if is_recent_enough(
+        if parse_datetime(article.published_at) is not None
+        and is_recent_enough(
             parse_datetime(article.published_at),
             now=now,
             lookback_hours=lookback_hours,

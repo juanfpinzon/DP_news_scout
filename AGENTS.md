@@ -129,6 +129,7 @@ dpns/
 - `llm_scoring_model: anthropic/claude-haiku-4.5`
 - `llm_digest_model: anthropic/claude-sonnet-4-6`
 - `llm_model_fallback: anthropic/claude-haiku-4.5`
+- `rss_lookback_hours: 168`
 - `dedup_window_days: 7`
 - `email_max_width_px: 880`
 - `issue_number_override: 0`
@@ -162,6 +163,7 @@ PIPELINE_TIMEOUT=600    # Max pipeline runtime (seconds)
 LLM_SCORING_MODEL=anthropic/claude-haiku-4.5
 LLM_DIGEST_MODEL=anthropic/claude-sonnet-4-6
 LLM_MODEL_FALLBACK=anthropic/claude-haiku-4.5
+RSS_LOOKBACK_HOURS=168
 MAX_DIGEST_ITEMS=15
 MAX_DIGEST_ITEMS_PER_SOURCE=3
 EMAIL_MAX_WIDTH_PX=880
