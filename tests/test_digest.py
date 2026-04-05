@@ -449,6 +449,7 @@ def test_compose_digest_retries_after_invalid_json_response() -> None:
     assert len(llm_client.calls) == 2
     assert "Malformed output to repair" in str(llm_client.calls[1]["user_prompt"])
     assert "Allowed articles" in str(llm_client.calls[1]["user_prompt"])
+    assert "\"title\": \"Article 1\"" in str(llm_client.calls[1]["user_prompt"])
     assert any(event == "digest_composition_retrying_invalid_payload" for event, _payload in logger.records)
 
 
@@ -508,6 +509,120 @@ def test_compose_digest_recovers_unique_truncated_article_url() -> None:
     digest = asyncio.run(run())
 
     assert digest.quick_hits[0].url == "https://conference.dpw.ai/speakers/paul-polman-2"
+
+
+def test_compose_digest_recovers_brand_qualified_path_variant() -> None:
+    article = build_article(1, 10)
+    article.url = (
+        "https://mckinsey.com/capabilities/mckinsey-technology/our-insights/"
+        "building-the-foundations-for-agentic-ai-at-scale"
+    )
+    article.source = "McKinsey Operations Insights"
+    other_article = build_article(2, 9)
+    llm_client = FakeLLMClient(
+        [
+            """
+            {
+              "top_story": {
+                "url": "https://mckinsey.com/capabilities/technology/our-insights/building-the-foundations-for-agentic-ai-at-scale",
+                "headline": "Top headline",
+                "summary": "Top summary.",
+                "why_it_matters": "Top implication.",
+                "source": "McKinsey Operations Insights",
+                "date": "2026-04-02"
+              },
+              "key_developments": [],
+              "on_our_radar": [],
+              "quick_hits": [
+                {
+                  "url": "https://example.com/article-2",
+                  "one_liner": "Quick takeaway.",
+                  "source": "Source 2"
+                }
+              ]
+            }
+            """,
+        ]
+    )
+
+    async def run() -> Digest:
+        return await compose_digest(
+            [article, other_article],
+            llm_client=llm_client,
+            settings=build_settings(),
+        )
+
+    digest = asyncio.run(run())
+
+    assert digest.top_story.url == (
+        "https://mckinsey.com/capabilities/mckinsey-technology/our-insights/"
+        "building-the-foundations-for-agentic-ai-at-scale"
+    )
+
+
+def test_compose_digest_retries_instead_of_relinking_same_host_tail_only_match() -> None:
+    article = build_article(1, 10)
+    article.url = "https://example.com/reports/our-insights/foo"
+    article.source = "Example Source"
+    llm_client = FakeLLMClient(
+        [
+            """
+            {
+              "top_story": {
+                "url": "https://example.com/blog/our-insights/foo",
+                "headline": "Top headline",
+                "summary": "Top summary.",
+                "why_it_matters": "Top implication.",
+                "source": "Example Source",
+                "date": "2026-04-01"
+              },
+              "key_developments": [],
+              "on_our_radar": [],
+              "quick_hits": []
+            }
+            """,
+            """
+            {
+              "top_story": {
+                "url": "https://example.com/blog/our-insights/foo",
+                "headline": "Top headline",
+                "summary": "Top summary.",
+                "why_it_matters": "Top implication.",
+                "source": "Example Source",
+                "date": "2026-04-01"
+              },
+              "key_developments": [],
+              "on_our_radar": [],
+              "quick_hits": []
+            }
+            """,
+            """
+            {
+              "top_story": {
+                "url": "https://example.com/blog/our-insights/foo",
+                "headline": "Top headline",
+                "summary": "Top summary.",
+                "why_it_matters": "Top implication.",
+                "source": "Example Source",
+                "date": "2026-04-01"
+              },
+              "key_developments": [],
+              "on_our_radar": [],
+              "quick_hits": []
+            }
+            """,
+        ]
+    )
+
+    async def run() -> None:
+        await compose_digest(
+            [article],
+            llm_client=llm_client,
+            settings=build_settings(),
+        )
+
+    with pytest.raises(DigestCompositionError, match="unknown article URL"):
+        asyncio.run(run())
 
 
 def test_compose_digest_retries_instead_of_coercing_longer_hallucinated_url() -> None:
