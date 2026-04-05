@@ -8,7 +8,9 @@ from email.utils import parsedate_to_datetime
 from html import unescape
 from time import monotonic
 from urllib import robotparser
+from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlparse
+from urllib.request import Request, urlopen
 from zlib import adler32
 
 import httpx
@@ -37,6 +39,9 @@ TRACKABLE_CONTENT_MARKERS = (
     "/story",
     "/stories",
 )
+
+ROBOTS_TXT_ACCEPT_HEADER = "text/plain,*/*;q=0.1"
+ROBOTS_TXT_TIMEOUT_SECONDS = 15.0
 
 
 def build_request_headers(source_name: str, url: str) -> dict[str, str]:
@@ -188,6 +193,7 @@ class RobotsPolicy:
         client: httpx.AsyncClient,
         url: str,
         user_agent: str,
+        allow_network_fallback: bool = False,
     ) -> bool:
         parsed_url = urlparse(url)
         robots_url = f"{parsed_url.scheme}://{parsed_url.netloc}/robots.txt"
@@ -199,6 +205,7 @@ class RobotsPolicy:
                     client=client,
                     robots_url=robots_url,
                     user_agent=user_agent,
+                    allow_network_fallback=allow_network_fallback,
                 )
 
             parser = self._parsers[robots_url]
@@ -212,27 +219,71 @@ class RobotsPolicy:
         client: httpx.AsyncClient,
         robots_url: str,
         user_agent: str,
+        allow_network_fallback: bool,
     ) -> robotparser.RobotFileParser | None:
         try:
             response = await client.get(
                 robots_url,
-                headers={"User-Agent": user_agent, "Accept": "text/plain,*/*;q=0.1"},
+                headers={"User-Agent": user_agent, "Accept": ROBOTS_TXT_ACCEPT_HEADER},
             )
         except httpx.HTTPError:
             return None
 
         if response.status_code in {401, 403}:
-            parser = robotparser.RobotFileParser()
-            parser.parse(["User-agent: *", "Disallow: /"])
-            return parser
+            if not allow_network_fallback:
+                return _disallow_all_parser()
+
+            fallback_status, fallback_body = await asyncio.to_thread(
+                _fetch_robots_txt_with_urllib,
+                robots_url=robots_url,
+                user_agent=user_agent,
+            )
+            if fallback_status is not None and fallback_status < 400 and fallback_body is not None:
+                return _parse_robots_body(robots_url=robots_url, body=fallback_body)
+            if fallback_status in {404, 410}:
+                return None
+            return _disallow_all_parser()
 
         if response.status_code >= 400:
             return None
 
-        parser = robotparser.RobotFileParser()
-        parser.set_url(robots_url)
-        parser.parse(response.text.splitlines())
-        return parser
+        return _parse_robots_body(robots_url=robots_url, body=response.text)
+
+
+def _fetch_robots_txt_with_urllib(*, robots_url: str, user_agent: str) -> tuple[int | None, str | None]:
+    request = Request(
+        robots_url,
+        headers={
+            "User-Agent": user_agent,
+            "Accept": ROBOTS_TXT_ACCEPT_HEADER,
+        },
+    )
+    try:
+        with urlopen(request, timeout=ROBOTS_TXT_TIMEOUT_SECONDS) as response:
+            return response.status, _decode_robots_body(response.read(), response.headers)
+    except HTTPError as exc:
+        return exc.code, _decode_robots_body(exc.read(), exc.headers)
+    except (OSError, URLError):
+        return None, None
+
+
+def _decode_robots_body(body: bytes, headers: object) -> str:
+    charset_getter = getattr(headers, "get_content_charset", None)
+    charset = charset_getter() if callable(charset_getter) else None
+    return body.decode(charset or "utf-8", errors="replace")
+
+
+def _parse_robots_body(*, robots_url: str, body: str) -> robotparser.RobotFileParser:
+    parser = robotparser.RobotFileParser()
+    parser.set_url(robots_url)
+    parser.parse(body.splitlines())
+    return parser
+
+
+def _disallow_all_parser() -> robotparser.RobotFileParser:
+    parser = robotparser.RobotFileParser()
+    parser.parse(["User-agent: *", "Disallow: /"])
+    return parser
 
 
 def _as_utc(value: datetime) -> datetime:

@@ -108,6 +108,10 @@ dpns/
 - RSS-first strategy; web scraping only where RSS is unavailable.
 - Live fetch freshness window is currently 7 days.
 - Robots.txt respected; 1 req/sec per domain rate limit.
+- `robots.txt` is checked before RSS and scrape fetches.
+- If the DPNS-managed HTTP client gets `401/403` on `robots.txt`, the fetcher may do one fallback retry for the robots file only.
+- If that retry fails, the policy remains deny-by-default unless `robots.txt` is confirmed missing (`404/410`).
+- Caller-supplied `httpx.AsyncClient` instances are not bypassed during robots evaluation.
 
 ### Email Design
 - Current desktop max width: 880px, table-based layout for Outlook compatibility.
