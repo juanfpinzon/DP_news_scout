@@ -2,6 +2,7 @@
 
 Digital Procurement News Scout (DPNS) is a daily procurement and digital transformation digest that:
 
+- monitors 16 currently configured active sources (6 RSS, 10 scrape),
 - fetches articles from RSS and approved scrape sources,
 - scores relevance with a lower-cost Claude model via OpenRouter,
 - composes the executive briefing with Sonnet via OpenRouter,
@@ -14,7 +15,8 @@ Digital Procurement News Scout (DPNS) is a daily procurement and digital transfo
 - Manual operator entry point: `python scripts/run_manual.py`
 - Mock-render preview tool: `python scripts/test_email.py`
 - SQLite storage: `data/dpns.db`
-- Current test-mode issue number: fixed to `0` via `config/settings.yaml`
+- Live fetch freshness window: 7 days
+- Current issue number override: fixed to `0` via `config/settings.yaml`
 
 ## Quick Start
 
@@ -55,6 +57,7 @@ The main pipeline is:
 Important current behavior:
 
 - The pipeline fetches live sources on every normal run.
+- The live fetch window for RSS and scrape ingestion is currently 7 days.
 - Stored articles in SQLite are used for recent-URL dedup, not as an LLM cache.
 - Successful live runs persist article metadata back into SQLite.
 - `config/settings.yaml` currently sets `issue_number_override: 0`, so all live/manual runs show `Issue #0`.
@@ -159,6 +162,11 @@ Mutually exclusive or constrained combinations:
 - `--ignore-seen-db` cannot be combined with `--reuse-seen-db`.
 - `--sources-only` cannot be combined with `--reuse-seen-db`.
 
+Additional behavior:
+
+- Non-dry manual sends append a timestamped subject suffix such as `Manual run 13:40:29 UTC` or `Manual test 08:00:00 UTC` to reduce mail-client threading during repeated tests.
+- Scheduled or direct `python -m src.main` runs keep the canonical subject line without the manual suffix.
+
 ## Test Runs And SQLite Behavior
 
 This is the most important part for local testing.
@@ -239,6 +247,7 @@ Behavior:
 - Skips network fetch entirely.
 - Loads stored articles from `data/dpns.db`.
 - Re-runs scoring and digest composition against those stored article records.
+- Reuse only includes stored articles inside `reuse_seen_db_window_days` and excludes undated scraped rows so stale scrape content cannot resurface as fresh.
 - Useful for repeatable testing of rendering/send behavior without hitting live sources.
 - Fails cleanly if the `articles` table is empty.
 

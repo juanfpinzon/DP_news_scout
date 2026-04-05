@@ -248,7 +248,7 @@ The digest should read like a **trusted advisor's morning brief**, not a raw RSS
                        ▼
 ┌─────────────────────────────────────────────────────────┐
 │              3. RENDERER MODULE                         │
-│  - Jinja2 / MJML HTML email template                    │
+│  - Jinja2 + premailer HTML email template               │
 │  - Inlines CSS for email client compatibility           │
 │  - Plain-text fallback generation                       │
 │  - Output: email.html + email.txt                       │
@@ -271,7 +271,7 @@ The digest should read like a **trusted advisor's morning brief**, not a raw RSS
 | Language | Python 3.11+ | Best ecosystem for scraping, LLM APIs, email |
 | Scraping | `httpx` + `beautifulsoup4` + `feedparser` | Async HTTP, robust HTML parsing, RSS native |
 | LLM | `openai` SDK via OpenRouter (`base_url="https://openrouter.ai/api/v1"`) | Single gateway to all models; model swappable via config |
-| Email template | MJML → compiled HTML, or Jinja2 + inline CSS | MJML guarantees email client compatibility |
+| Email template | Jinja2 + premailer inline CSS | Matches the current implementation and keeps email-client-safe output |
 | Email sending | AgentMail | Built for AI agents; bidirectional email; simple Python SDK; free tier available |
 | Scheduling | GitHub Actions cron / Railway cron / `crontab` on a VPS | Zero-infra option (GH Actions) or cheap VPS |
 | Storage | SQLite (local) or Supabase (hosted) | Article dedup, run history, delivery logs |
@@ -311,14 +311,14 @@ This allows non-developers to refine the editorial voice without touching code.
 ## 8. Email Design Spec
 
 ### Visual Requirements
-- **Max width:** 640px (email best practice)
-- **Font:** System font stack (Arial / Helvetica fallback)
-- **Header:** Dark navy (#1a2744) with white text, date, issue number
-- **Top Story:** Highlighted with accent border (teal #0891b2)
+- **Max width:** 880px
+- **Font:** `GT Pressura LCG Black` for headings with serif fallbacks; `Helvetica Neue` / Helvetica / Arial for body copy
+- **Header:** Deep navy (#1a2332) with date, issue number, and brand masthead
+- **Top Story:** Highlighted with accent border (teal #0891b2) and tinted card background
 - **Section headers:** Bold, uppercase, subtle divider line
-- **Article cards:** Light gray background (#f8f9fa), subtle border, clear hierarchy
+- **Article cards:** Tinted backgrounds (`#f0f9fb`, `#f1faee`) with subtle borders and clear hierarchy
 - **Links:** Teal (#0891b2), underlined on hover
-- **Footer:** Light gray, smaller text, feedback link
+- **Footer:** Deep navy, smaller text, feedback link
 - **Responsive:** Single-column, 16px+ body text for mobile
 
 ### Example Layout (ASCII)

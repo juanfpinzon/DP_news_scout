@@ -2,7 +2,7 @@
 
 ## Project Summary
 
-DPNS is a daily automated email digest that monitors 20+ procurement and digital transformation news sources, uses Claude to score relevance and compose executive summaries, and delivers a curated briefing to Digital Procurement senior leaders at PepsiCo every weekday at 9:00 AM CET.
+DPNS is a daily automated email digest that currently monitors 16 configured procurement and digital transformation sources, uses Claude to score relevance and compose executive summaries, and delivers a curated briefing to Digital Procurement senior leaders at PepsiCo every weekday at 9:00 AM CET.
 
 Full context lives in:
 - **[PRD.md](PRD.md)** — product requirements, content strategy, email design spec, success metrics
@@ -41,7 +41,7 @@ Primary operator entry point for local work: `python scripts/run_manual.py`
 - **openai** SDK via OpenRouter (`base_url="https://openrouter.ai/api/v1"`) — single LLM gateway for all model calls
 - **Jinja2** + **premailer** (email template + CSS inlining)
 - **AgentMail** (email delivery — `pip install agentmail`)
-- **SQLite** via **sqlite-utils** (article storage, run logs, delivery logs)
+- **SQLite** via the Python `sqlite3` storage layer (article storage, run logs, delivery records)
 - **structlog** (structured logging)
 - **pyyaml** + **python-dotenv** (config)
 - **GitHub Actions** (cron scheduler)
@@ -107,7 +107,9 @@ dpns/
 ### Content Sources
 - Sources are tiered (Tier 1 = must-fetch, Tier 2 = supplemental, Tier 3 = conditional).
 - Source config in `config/sources.yaml` — adding/removing sources requires no code change (F-08).
+- Current validated active set: 16 sources total, with 6 RSS feeds and 10 scrape sources.
 - RSS-first strategy; web scraping only where RSS is unavailable.
+- Live fetch freshness window is currently 7 days.
 - Robots.txt respected; 1 req/sec per domain rate limit.
 
 ### Email Design
@@ -117,9 +119,10 @@ dpns/
 - CSS inlined via `premailer` for broad email client compatibility.
 
 ### Storage
-- SQLite at `data/dpns.db` — tracks articles (dedup), pipeline runs, and delivery logs.
+- SQLite at `data/dpns.db` — tracks articles, `pipeline_runs`, and `delivery_log`.
 - Dedup window: 7 days by URL (normalized — tracking params stripped).
 - Stored articles are used for recent-URL dedup and testing reuse flows, not as an LLM cache.
+- Reuse mode only considers rows inside `reuse_seen_db_window_days` and excludes undated scraped rows.
 - Current issue number is fixed to `0` through `config/settings.yaml` via `issue_number_override`.
 
 ### Current Runtime Settings Worth Knowing
@@ -131,6 +134,7 @@ dpns/
 - `llm_model_fallback: anthropic/claude-haiku-4.5`
 - `rss_lookback_hours: 168`
 - `dedup_window_days: 7`
+- `reuse_seen_db_window_days: 7`
 - `email_max_width_px: 880`
 - `issue_number_override: 0`
 
@@ -237,7 +241,7 @@ This repository now has three distinct testing behaviors that matter for repeate
 3. Reuse what is already in SQLite
    Command: `python scripts/run_manual.py --dry-run --reuse-seen-db`
    Behavior:
-   Skips network fetch completely and reuses stored articles from `data/dpns.db`. This is the most repeatable option for testing layout, prompt changes, or send behavior without hitting sources again. It fails if the `articles` table is empty.
+   Skips network fetch completely and reuses stored articles from `data/dpns.db`. Only recent rows inside the reuse window are eligible, and undated scraped rows are excluded. This is the most repeatable option for testing layout, prompt changes, or send behavior without hitting sources again. It fails if no recent eligible rows remain.
 
 Model validation note:
 
@@ -249,6 +253,7 @@ Special note:
 - `--preview` and `--test-email` use live fetched content by default.
 - `--preview --reuse-seen-db` and `--test-email --reuse-seen-db` are the recommended repeatable test modes once the DB has been populated.
 - `--sources-only` never persists fetched articles.
+- Non-dry manual sends append a timestamped subject suffix to reduce mail-client threading during repeated test sends.
 
 ### SQLite Behavior Summary
 

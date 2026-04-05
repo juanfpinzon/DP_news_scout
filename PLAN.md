@@ -4,6 +4,8 @@
 
 This plan breaks the DPNS project into phases, epics, and individual tasks sized for Claude Code sessions. Each task is designed to be completable in a single coding session with clear inputs/outputs.
 
+This file is a historical implementation plan. `README.md` and `AGENTS.md` are the canonical current-runtime references; completed-task notes below have been updated where implementation details materially changed.
+
 **Estimated total effort:** 5–7 days of focused development
 **Tech stack:** Python 3.11+ · httpx · feedparser · BeautifulSoup4 · openai SDK (via OpenRouter) · Jinja2 · AgentMail · SQLite · GitHub Actions
 
@@ -47,7 +49,7 @@ dpns/
 │   │       └── digest.html     # Jinja2 email template
 │   ├── sender/
 │   │   ├── __init__.py
-│   │   └── email_sender.py     # Resend/SendGrid integration
+│   │   └── email_sender.py     # AgentMail integration
 │   ├── storage/
 │   │   ├── __init__.py
 │   │   └── db.py               # SQLite for articles, runs, logs
@@ -56,7 +58,7 @@ dpns/
 │       ├── logging.py          # Structured logging setup
 │       └── config.py           # Config loader (YAML + env)
 ├── templates/
-│   └── digest_email.html       # MJML source (compiled to renderer/templates/)
+│   └── digest_email.html       # Jinja2 email template
 ├── tests/
 │   ├── test_fetcher.py
 │   ├── test_analyzer.py
@@ -86,7 +88,7 @@ Set up pyproject.toml with dependencies:
   - jinja2, premailer (CSS inlining)
   - agentmail (email)
   - pyyaml, python-dotenv
-  - sqlite-utils
+  - sqlite3 storage layer (current implementation; sqlite-utils remains in dependencies for legacy tooling)
   - structlog
 Create .env.example with all required env vars.
 Create a basic README.md.
@@ -155,7 +157,7 @@ Build src/fetcher/registry.py:
   - Sort by tier (1 first)
   - Return list of Source dataclass objects
 
-Research and populate actual RSS feed URLs for all 20+ sources.
+Research and populate actual RSS feed URLs for the initial source set.
 
 REVISION COMPLETED (2026-04-04):
   - Implemented scripts/seed_sources.py (was a stub) — validates all URLs and selectors.
@@ -229,7 +231,7 @@ Build src/analyzer/llm_client.py:
   - class LLMClient using openai SDK pointed at OpenRouter:
       client = OpenAI(api_key=OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1")
   - Method: async complete(system_prompt, user_prompt, max_tokens) -> str
-  - Model configured via settings.yaml (llm_model); falls back to llm_model_fallback if primary returns 429/503
+  - Models configured via settings.yaml (`llm_scoring_model`, `llm_digest_model`); use `llm_model_fallback` on retry/fallback conditions
   - Token tracking: log input/output tokens per call
   - Retry: 3 attempts with exponential backoff
   - Cost estimation: log estimated cost per call (using OpenRouter /api/v1/generation metadata)
@@ -324,7 +326,7 @@ Create prompts/digest_composition.md with format instructions and examples.
 Create templates/digest_email.html (Jinja2 template):
   - Inline CSS (email clients strip <style> blocks in many cases)
   - Table-based layout for Outlook compatibility
-  - 640px max width, centered
+  - 880px max width, centered
   - Sections:
     - Header: navy background, white text, date + issue #
     - Top Story: teal left-border accent, larger headline
@@ -651,7 +653,7 @@ PIPELINE_TIMEOUT=600
 | Item | Estimate |
 |------|----------|
 | OpenRouter API (~15 articles/day × 22 weekdays, scoring + composition) | ~$15–25 |
-| Resend (free tier: 3,000 emails/month) | $0 |
+| AgentMail (free tier) | $0 |
 | GitHub Actions (free tier: 2,000 min/month) | $0 |
 | Domain for email sender (optional) | ~$12/year |
 | **Total** | **~$15–30/month** |
