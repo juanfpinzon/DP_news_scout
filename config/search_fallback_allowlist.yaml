@@ -1,0 +1,112 @@
+auto_include_source_categories:
+  - trade_media
+  - mainstream
+
+publishers:
+  - domain: reuters.com
+    label: Reuters
+    group: mainstream
+    active: true
+  - domain: bloomberg.com
+    label: Bloomberg
+    group: mainstream
+    active: true
+  - domain: ft.com
+    label: Financial Times
+    group: mainstream
+    active: true
+  - domain: wsj.com
+    label: The Wall Street Journal
+    group: mainstream
+    active: true
+  - domain: apnews.com
+    label: Associated Press
+    group: mainstream
+    active: true
+  - domain: cnbc.com
+    label: CNBC
+    group: mainstream
+    active: true
+  - domain: bbc.com
+    label: BBC
+    group: mainstream
+    active: true
+  - domain: economist.com
+    label: The Economist
+    group: mainstream
+    active: true
+  - domain: asia.nikkei.com
+    label: Nikkei Asia
+    group: mainstream
+    active: true
+  - domain: spendmatters.com
+    label: Spend Matters
+    group: trade_media
+    active: true
+  - domain: cporising.com
+    label: CPO Rising
+    group: trade_media
+    active: true
+  - domain: procurementmag.com
+    label: Procurement Magazine
+    group: trade_media
+    active: true
+  - domain: supplychaindive.com
+    label: Supply Chain Dive
+    group: trade_media
+    active: true
+  - domain: sdcexec.com
+    label: SDCExec
+    group: trade_media
+    active: true
+  - domain: conference.dpw.ai
+    label: DPW News
+    group: trade_media
+    active: true
+  - domain: artofprocurement.com
+    label: Art of Procurement
+    group: trade_media
+    active: true
+  - domain: cio.com
+    label: CIO
+    group: trade_media
+    active: true
+  - domain: ciodive.com
+    label: CIO Dive
+    group: trade_media
+    active: true
+  - domain: computerweekly.com
+    label: Computer Weekly
+    group: trade_media
+    active: true
+  - domain: informationweek.com
+    label: InformationWeek
+    group: trade_media
+    active: true
+  - domain: zdnet.com
+    label: ZDNET
+    group: trade_media
+    active: true
+  - domain: techtarget.com
+    label: TechTarget
+    group: trade_media
+    active: true
+  - domain: venturebeat.com
+    label: VentureBeat
+    group: trade_media
+    active: true
+  - domain: hbr.org
+    label: Harvard Business Review
+    group: trade_media
+    active: true
+
+deny_domains:
+  - wikipedia.org
+  - reddit.com
+  - x.com
+  - twitter.com
+  - facebook.com
+  - linkedin.com
+  - youtube.com
+  - medium.com
+  - substack.com

@@ -18,7 +18,7 @@ from src.fetcher import (
 )
 from src.fetcher.common import RobotsPolicy
 from src.fetcher.dedup import deduplicate_articles, normalize_url
-from src.fetcher.models import RawArticle, Source
+from src.fetcher.models import RawArticle, SearchFallbackConfig, Source
 from src.fetcher.rss import RSSFetchError
 from src.fetcher.scraper import JavaScriptRenderedPageError, ScrapeFetchError
 from src.storage.db import get_recent_urls, save_articles
@@ -76,6 +76,84 @@ def test_load_source_registry_filters_inactive_and_sorts_by_tier(tmp_path) -> No
     assert sources[0].selectors["article"] == "article"
 
 
+def test_load_source_registry_excludes_inactive_fallback_only_sources_by_default(tmp_path) -> None:
+    registry = tmp_path / "sources.yaml"
+    registry.write_text(
+        dedent(
+            """
+            sources:
+              - name: Active Feed
+                url: https://example.com/feed.xml
+                tier: 1
+                method: rss
+                active: true
+                category: trade_media
+              - name: SAP Ariba
+                url: https://news.sap.com/tags/sap-ariba/
+                tier: 2
+                method: scrape
+                active: false
+                category: vendor
+                selectors:
+                  article: article
+                  title: h2
+                  link: a[href]
+                  date: time
+                fallback_search:
+                  enabled: true
+                  include_when_inactive: true
+                  query: '"SAP Ariba" procurement'
+                  max_results: 2
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    sources = load_source_registry(registry)
+
+    assert [source.name for source in sources] == ["Active Feed"]
+
+
+def test_load_source_registry_can_include_inactive_fallback_only_sources(tmp_path) -> None:
+    registry = tmp_path / "sources.yaml"
+    registry.write_text(
+        dedent(
+            """
+            sources:
+              - name: Active Feed
+                url: https://example.com/feed.xml
+                tier: 1
+                method: rss
+                active: true
+                category: trade_media
+              - name: SAP Ariba
+                url: https://news.sap.com/tags/sap-ariba/
+                tier: 2
+                method: scrape
+                active: false
+                category: vendor
+                selectors:
+                  article: article
+                  title: h2
+                  link: a[href]
+                  date: time
+                fallback_search:
+                  enabled: true
+                  include_when_inactive: true
+                  query: '"SAP Ariba" procurement'
+                  max_results: 2
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    sources = load_source_registry(registry, include_fallback_only=True)
+
+    assert [source.name for source in sources] == ["Active Feed", "SAP Ariba"]
+    assert sources[1].fallback_search.enabled is True
+    assert sources[1].fallback_search.include_when_inactive is True
+
+
 def test_load_source_registry_rejects_invalid_category(tmp_path) -> None:
     registry = tmp_path / "sources.yaml"
     registry.write_text(
@@ -115,6 +193,35 @@ def test_load_source_registry_requires_scrape_selectors(tmp_path) -> None:
     )
 
     with pytest.raises(ConfigError, match="selectors is required for scrape sources"):
+        load_source_registry(registry)
+
+
+def test_load_source_registry_rejects_invalid_fallback_result_limit(tmp_path) -> None:
+    registry = tmp_path / "sources.yaml"
+    registry.write_text(
+        dedent(
+            """
+            sources:
+              - name: Bad Fallback
+                url: https://example.com/blog
+                tier: 1
+                method: scrape
+                active: true
+                category: vendor
+                selectors:
+                  article: article
+                  title: h2
+                  link: a[href]
+                  date: time
+                fallback_search:
+                  enabled: true
+                  max_results: 4
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="fallback_search.max_results must be between 1 and 3"):
         load_source_registry(registry)
 
 
@@ -1016,7 +1123,8 @@ def test_fetch_all_sources_loads_registry_when_sources_not_provided(tmp_path, mo
         category="trade_media",
     )
 
-    def fake_load_source_registry() -> list[Source]:
+    def fake_load_source_registry(**kwargs) -> list[Source]:
+        assert kwargs["include_fallback_only"] is False
         return [registry_source]
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -1229,6 +1337,302 @@ def test_fetch_all_sources_report_enables_robots_fallback_for_managed_client(
     )
 
     assert [article.url for article in summary.articles] == ["https://example.com/managed-story"]
+    assert summary.sources_succeeded == 1
+    assert summary.sources_failed == 0
+
+
+def test_fetch_all_sources_report_uses_search_fallback_after_direct_failure(
+    tmp_path, monkeypatch
+) -> None:
+    now = datetime(2026, 3, 31, 9, 0, tzinfo=timezone.utc)
+    database_path = str(tmp_path / "dpns.db")
+    logger = DummyLogger()
+    settings = _settings(database_path)
+    settings.search_fallback_enabled = True
+    source = Source(
+        name="Blocked Feed",
+        url="https://example.com/blocked.xml",
+        tier=1,
+        method="rss",
+        active=True,
+        category="trade_media",
+    )
+
+    async def fake_fetch_rss(source_arg: Source, **_kwargs) -> list[RawArticle]:
+        assert source_arg == source
+        raise RSSFetchError("robots blocked")
+
+    async def fake_search_fallback_articles(source_arg: Source, **_kwargs) -> list[RawArticle]:
+        assert source_arg == source
+        return [
+            RawArticle(
+                url="https://reuters.com/example-story",
+                title="Recovered story",
+                source="Reuters",
+                source_url="https://reuters.com/",
+                category="mainstream",
+                published_at="2026-03-30T08:00:00+00:00",
+                fetched_at=now.isoformat(),
+                origin_source=source_arg.name,
+                discovery_method="search_fallback",
+            )
+        ]
+
+    monkeypatch.setattr(fetcher_module, "fetch_rss", fake_fetch_rss)
+    monkeypatch.setattr(fetcher_module, "search_fallback_articles", fake_search_fallback_articles)
+
+    summary = asyncio.run(
+        fetch_all_sources_report(
+            sources=[source],
+            settings=settings,
+            database_path=database_path,
+            logger=logger,
+            now=now,
+            persist_to_db=False,
+        )
+    )
+
+    assert [article.url for article in summary.articles] == ["https://reuters.com/example-story"]
+    assert summary.sources_succeeded == 1
+    assert summary.sources_failed == 0
+    complete_event = next(
+        kwargs for event, kwargs in logger.events if event == "source_fetch_complete"
+    )
+    assert complete_event["fetch_path"] == "search_fallback_after_failure"
+
+
+def test_fetch_all_sources_report_uses_search_fallback_after_zero_articles(
+    tmp_path, monkeypatch
+) -> None:
+    now = datetime(2026, 3, 31, 9, 0, tzinfo=timezone.utc)
+    database_path = str(tmp_path / "dpns.db")
+    logger = DummyLogger()
+    settings = _settings(database_path)
+    settings.search_fallback_enabled = True
+    source = Source(
+        name="Empty Feed",
+        url="https://example.com/empty.xml",
+        tier=1,
+        method="rss",
+        active=True,
+        category="trade_media",
+    )
+
+    async def fake_fetch_rss(source_arg: Source, **_kwargs) -> list[RawArticle]:
+        assert source_arg == source
+        return []
+
+    async def fake_search_fallback_articles(source_arg: Source, **_kwargs) -> list[RawArticle]:
+        assert source_arg == source
+        return [
+            RawArticle(
+                url="https://www.ft.com/content/example-story",
+                title="Fallback story",
+                source="Financial Times",
+                source_url="https://ft.com/",
+                category="mainstream",
+                published_at="2026-03-30T08:00:00+00:00",
+                fetched_at=now.isoformat(),
+                origin_source=source_arg.name,
+                discovery_method="search_fallback",
+            )
+        ]
+
+    monkeypatch.setattr(fetcher_module, "fetch_rss", fake_fetch_rss)
+    monkeypatch.setattr(fetcher_module, "search_fallback_articles", fake_search_fallback_articles)
+
+    summary = asyncio.run(
+        fetch_all_sources_report(
+            sources=[source],
+            settings=settings,
+            database_path=database_path,
+            logger=logger,
+            now=now,
+            persist_to_db=False,
+        )
+    )
+
+    assert [article.url for article in summary.articles] == ["https://ft.com/content/example-story"]
+    assert summary.sources_succeeded == 1
+    assert summary.sources_failed == 0
+    complete_event = next(
+        kwargs for event, kwargs in logger.events if event == "source_fetch_complete"
+    )
+    assert complete_event["fetch_path"] == "search_fallback_after_empty"
+
+
+def test_fetch_all_sources_report_keeps_direct_success_when_empty_fallback_fails(
+    tmp_path, monkeypatch
+) -> None:
+    now = datetime(2026, 3, 31, 9, 0, tzinfo=timezone.utc)
+    database_path = str(tmp_path / "dpns.db")
+    logger = DummyLogger()
+    settings = _settings(database_path)
+    settings.search_fallback_enabled = True
+    source = Source(
+        name="Reachable Feed",
+        url="https://example.com/reachable.xml",
+        tier=1,
+        method="rss",
+        active=True,
+        category="trade_media",
+    )
+
+    async def fake_fetch_rss(source_arg: Source, **_kwargs) -> list[RawArticle]:
+        assert source_arg == source
+        return []
+
+    async def fake_search_fallback_articles(source_arg: Source, **_kwargs) -> list[RawArticle]:
+        assert source_arg == source
+        raise RuntimeError("Brave unavailable")
+
+    monkeypatch.setattr(fetcher_module, "fetch_rss", fake_fetch_rss)
+    monkeypatch.setattr(fetcher_module, "search_fallback_articles", fake_search_fallback_articles)
+
+    summary = asyncio.run(
+        fetch_all_sources_report(
+            sources=[source],
+            settings=settings,
+            database_path=database_path,
+            logger=logger,
+            now=now,
+            persist_to_db=False,
+        )
+    )
+
+    assert summary.articles == []
+    assert summary.sources_succeeded == 1
+    assert summary.sources_failed == 0
+    complete_event = next(
+        kwargs for event, kwargs in logger.events if event == "source_fetch_complete"
+    )
+    assert complete_event["fetch_path"] == "direct_empty_fallback_failed"
+
+
+def test_fetch_all_sources_report_runs_fallback_only_sources(
+    tmp_path, monkeypatch
+) -> None:
+    now = datetime(2026, 3, 31, 9, 0, tzinfo=timezone.utc)
+    database_path = str(tmp_path / "dpns.db")
+    logger = DummyLogger()
+    settings = _settings(database_path)
+    settings.search_fallback_enabled = True
+    source = Source(
+        name="SAP Ariba",
+        url="https://news.sap.com/tags/sap-ariba/",
+        tier=2,
+        method="scrape",
+        active=False,
+        category="vendor",
+        selectors={"article": "article", "title": "h2", "link": "a[href]", "date": "time"},
+        fallback_search=SearchFallbackConfig(
+            configured=True,
+            enabled=True,
+            include_when_inactive=True,
+            query="\"SAP Ariba\" procurement",
+            max_results=2,
+        ),
+    )
+
+    async def fake_scrape_source(source_arg: Source, **_kwargs) -> list[RawArticle]:
+        raise AssertionError(f"scrape_source should not run for fallback-only source {source_arg.name}")
+
+    async def fake_search_fallback_articles(source_arg: Source, **_kwargs) -> list[RawArticle]:
+        assert source_arg == source
+        return [
+            RawArticle(
+                url="https://www.cio.com/article/example-story",
+                title="SAP Ariba coverage",
+                source="CIO",
+                source_url="https://www.cio.com/",
+                category="trade_media",
+                published_at="2026-03-30T08:00:00+00:00",
+                fetched_at=now.isoformat(),
+                origin_source=source_arg.name,
+                discovery_method="search_fallback",
+            )
+        ]
+
+    monkeypatch.setattr(fetcher_module, "scrape_source", fake_scrape_source)
+    monkeypatch.setattr(fetcher_module, "search_fallback_articles", fake_search_fallback_articles)
+
+    summary = asyncio.run(
+        fetch_all_sources_report(
+            sources=[source],
+            settings=settings,
+            database_path=database_path,
+            logger=logger,
+            now=now,
+            persist_to_db=False,
+        )
+    )
+
+    assert [article.url for article in summary.articles] == ["https://cio.com/article/example-story"]
+    assert summary.sources_succeeded == 1
+    assert summary.sources_failed == 0
+    complete_event = next(
+        kwargs for event, kwargs in logger.events if event == "source_fetch_complete"
+    )
+    assert complete_event["fetch_path"] == "search_fallback_only"
+
+
+def test_fetch_all_sources_report_keeps_fallback_enabled_for_query_only_override(
+    tmp_path, monkeypatch
+) -> None:
+    now = datetime(2026, 3, 31, 9, 0, tzinfo=timezone.utc)
+    database_path = str(tmp_path / "dpns.db")
+    logger = DummyLogger()
+    settings = _settings(database_path)
+    settings.search_fallback_enabled = True
+    source = Source(
+        name="Override Feed",
+        url="https://example.com/override.xml",
+        tier=1,
+        method="rss",
+        active=True,
+        category="trade_media",
+        fallback_search=SearchFallbackConfig(
+            configured=True,
+            query="\"Override Feed\" procurement",
+            max_results=2,
+        ),
+    )
+
+    async def fake_fetch_rss(source_arg: Source, **_kwargs) -> list[RawArticle]:
+        assert source_arg == source
+        raise RSSFetchError("temporary direct failure")
+
+    async def fake_search_fallback_articles(source_arg: Source, **_kwargs) -> list[RawArticle]:
+        assert source_arg == source
+        return [
+            RawArticle(
+                url="https://reuters.com/override-story",
+                title="Override story",
+                source="Reuters",
+                source_url="https://reuters.com/",
+                category="mainstream",
+                published_at="2026-03-30T08:00:00+00:00",
+                fetched_at=now.isoformat(),
+                origin_source=source_arg.name,
+                discovery_method="search_fallback",
+            )
+        ]
+
+    monkeypatch.setattr(fetcher_module, "fetch_rss", fake_fetch_rss)
+    monkeypatch.setattr(fetcher_module, "search_fallback_articles", fake_search_fallback_articles)
+
+    summary = asyncio.run(
+        fetch_all_sources_report(
+            sources=[source],
+            settings=settings,
+            database_path=database_path,
+            logger=logger,
+            now=now,
+            persist_to_db=False,
+        )
+    )
+
+    assert [article.url for article in summary.articles] == ["https://reuters.com/override-story"]
     assert summary.sources_succeeded == 1
     assert summary.sources_failed == 0
 

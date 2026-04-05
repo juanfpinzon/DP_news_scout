@@ -156,7 +156,7 @@ def test_main_sources_only_reports_fetch_counts(
     monkeypatch.setattr(
         run_manual_module,
         "load_source_registry",
-        lambda: [object(), object(), object()],
+        lambda **_kwargs: [object(), object(), object()],
     )
     captured: dict[str, object] = {}
 
@@ -303,7 +303,7 @@ def test_render_live_digest_reports_stage_progress(
     config = _build_config(dry_run=False)
     progress_messages: list[str] = []
 
-    monkeypatch.setattr(run_manual_module, "load_source_registry", lambda: [object()])
+    monkeypatch.setattr(run_manual_module, "load_source_registry", lambda **_kwargs: [object()])
 
     async def fake_fetch_all_sources_report(**_kwargs):
         return FetchSummary(
@@ -360,7 +360,7 @@ def test_render_live_digest_uses_non_persisting_fetch_path_and_fails_on_total_ou
     config = _build_config(dry_run=False)
     captured: dict[str, object] = {}
 
-    monkeypatch.setattr(run_manual_module, "load_source_registry", lambda: [object()])
+    monkeypatch.setattr(run_manual_module, "load_source_registry", lambda **_kwargs: [object()])
 
     async def fake_fetch_all_sources_report(**kwargs):
         captured["persist_to_db"] = kwargs["persist_to_db"]
@@ -393,7 +393,7 @@ def test_render_live_digest_uses_issue_number_override(
 ) -> None:
     config = _build_config(dry_run=False, issue_number_override=0)
 
-    monkeypatch.setattr(run_manual_module, "load_source_registry", lambda: [object()])
+    monkeypatch.setattr(run_manual_module, "load_source_registry", lambda **_kwargs: [object()])
     monkeypatch.setattr(run_manual_module, "_next_issue_number", lambda _db_path: 7)
 
     async def fake_fetch_all_sources_report(**_kwargs):

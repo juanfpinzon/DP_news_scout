@@ -77,9 +77,17 @@ sources:
     url: "https://news.sap.com/tags/sap-ariba/"
     tier: 2
     method: "scrape"
-    active: true
+    active: false
     category: "vendor"
     selectors: *newsroom_scrape
+    fallback_search:
+      enabled: true
+      include_when_inactive: true
+      query: "\"SAP Ariba\" procurement OR spend management OR sourcing OR supplier management"
+      max_results: 3
+    # DEACTIVATED: news.sap.com robots.txt disallows all generic crawling
+    # (User-agent: * / Disallow: /). Tag and feed endpoints are both blocked.
+    # Search fallback enabled to recover third-party coverage from trusted publishers.
 
   - name: Archlet
     url: "https://www.archlet.io/resources"

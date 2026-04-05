@@ -58,6 +58,11 @@ def validate_source_payload(
         method=method,
         error_cls=error_cls,
     )
+    fallback_search = _normalize_fallback_search(
+        payload.get("fallback_search"),
+        index=index,
+        error_cls=error_cls,
+    )
 
     return {
         "name": name,
@@ -67,6 +72,7 @@ def validate_source_payload(
         "active": active,
         "category": category,
         "selectors": normalized_selectors,
+        "fallback_search": fallback_search,
     }
 
 
@@ -103,6 +109,62 @@ def _normalize_selectors(
             )
 
     return normalized
+
+
+def _normalize_fallback_search(
+    fallback_search: Any,
+    *,
+    index: int,
+    error_cls: type[Exception],
+) -> dict[str, Any]:
+    if fallback_search is None:
+        return {
+            "configured": False,
+            "enabled_explicit": False,
+            "enabled": False,
+            "include_when_inactive": False,
+            "query": None,
+            "max_results": None,
+        }
+    if not isinstance(fallback_search, Mapping):
+        raise error_cls(f"sources[{index}].fallback_search must be a mapping when provided")
+
+    enabled_explicit = "enabled" in fallback_search
+    enabled = fallback_search.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise error_cls(f"sources[{index}].fallback_search.enabled must be a boolean")
+
+    include_when_inactive = fallback_search.get("include_when_inactive", False)
+    if not isinstance(include_when_inactive, bool):
+        raise error_cls(
+            f"sources[{index}].fallback_search.include_when_inactive must be a boolean"
+        )
+
+    raw_query = fallback_search.get("query")
+    if raw_query is not None and (not isinstance(raw_query, str) or not raw_query.strip()):
+        raise error_cls(f"sources[{index}].fallback_search.query must be a non-empty string")
+    query = raw_query.strip() if isinstance(raw_query, str) else None
+
+    raw_max_results = fallback_search.get("max_results")
+    if raw_max_results is None:
+        max_results = None
+    else:
+        if not isinstance(raw_max_results, int):
+            raise error_cls(f"sources[{index}].fallback_search.max_results must be an integer")
+        if not 1 <= raw_max_results <= 3:
+            raise error_cls(
+                f"sources[{index}].fallback_search.max_results must be between 1 and 3"
+            )
+        max_results = raw_max_results
+
+    return {
+        "configured": True,
+        "enabled_explicit": enabled_explicit,
+        "enabled": enabled,
+        "include_when_inactive": include_when_inactive,
+        "query": query,
+        "max_results": max_results,
+    }
 
 
 def _require_non_empty_string(

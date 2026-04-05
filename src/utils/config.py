@@ -45,6 +45,10 @@ class Settings:
     issue_number_override: int | None = None
     recency_priority_window_days: int = 7
     reuse_seen_db_window_days: int = 7
+    search_fallback_enabled: bool = False
+    search_fallback_provider: str = "brave"
+    search_fallback_timeout_seconds: float = 15.0
+    search_fallback_max_results_per_source: int = 3
 
 
 @dataclass(slots=True)
@@ -56,6 +60,7 @@ class SourceConfig:
     active: bool = True
     category: str | None = None
     selectors: dict[str, Any] | None = None
+    fallback_search: dict[str, Any] | None = None
 
 
 @dataclass(slots=True)
@@ -70,6 +75,7 @@ class EnvConfig:
     agentmail_api_key: str
     agentmail_inbox_id: str
     email_from: str
+    brave_search_api_key: str | None = None
 
 
 @dataclass(slots=True)
@@ -91,6 +97,10 @@ def load_config(env_file: Path | None = None) -> AppConfig:
         "issue_number_override": None,
         "recency_priority_window_days": 7,
         "reuse_seen_db_window_days": 7,
+        "search_fallback_enabled": False,
+        "search_fallback_provider": "brave",
+        "search_fallback_timeout_seconds": 15.0,
+        "search_fallback_max_results_per_source": 3,
         **_read_yaml(CONFIG_DIR / "settings.yaml"),
     }
     sources_data = _read_yaml(CONFIG_DIR / "sources.yaml")
@@ -184,6 +194,26 @@ def load_config(env_file: Path | None = None) -> AppConfig:
             settings_data,
             "reuse_seen_db_window_days",
         ),
+        search_fallback_enabled=_get_bool(
+            "SEARCH_FALLBACK_ENABLED",
+            settings_data,
+            "search_fallback_enabled",
+        ),
+        search_fallback_provider=_get_str(
+            "SEARCH_FALLBACK_PROVIDER",
+            settings_data,
+            "search_fallback_provider",
+        ),
+        search_fallback_timeout_seconds=_get_float(
+            "SEARCH_FALLBACK_TIMEOUT_SECONDS",
+            settings_data,
+            "search_fallback_timeout_seconds",
+        ),
+        search_fallback_max_results_per_source=_get_int(
+            "SEARCH_FALLBACK_MAX_RESULTS_PER_SOURCE",
+            settings_data,
+            "search_fallback_max_results_per_source",
+        ),
     )
     _validate_settings(settings)
 
@@ -192,6 +222,7 @@ def load_config(env_file: Path | None = None) -> AppConfig:
         agentmail_api_key=_require_env("AGENTMAIL_API_KEY"),
         agentmail_inbox_id=_require_env("AGENTMAIL_INBOX_ID"),
         email_from=_require_env("EMAIL_FROM"),
+        brave_search_api_key=_optional_env("BRAVE_SEARCH_API_KEY"),
     )
 
     sources = _build_sources(sources_data)
@@ -314,6 +345,14 @@ def _require_env(key: str) -> str:
     return value.strip()
 
 
+def _optional_env(key: str) -> str | None:
+    value = os.getenv(key)
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
 def _validate_settings(settings: Settings) -> None:
     if settings.max_articles_per_source <= 0:
         raise ConfigError("max_articles_per_source must be greater than 0")
@@ -347,6 +386,12 @@ def _validate_settings(settings: Settings) -> None:
         raise ConfigError("recency_priority_window_days must be greater than 0")
     if settings.reuse_seen_db_window_days <= 0:
         raise ConfigError("reuse_seen_db_window_days must be greater than 0")
+    if settings.search_fallback_provider.strip().casefold() != "brave":
+        raise ConfigError("search_fallback_provider must be 'brave'")
+    if settings.search_fallback_timeout_seconds <= 0:
+        raise ConfigError("search_fallback_timeout_seconds must be greater than 0")
+    if not 1 <= settings.search_fallback_max_results_per_source <= 3:
+        raise ConfigError("search_fallback_max_results_per_source must be between 1 and 3")
 
 
 def _build_sources(config: dict[str, Any]) -> list[SourceConfig]:

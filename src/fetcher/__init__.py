@@ -13,6 +13,7 @@ from src.fetcher.dedup import deduplicate_articles, normalize_url
 from src.fetcher.models import RawArticle, Source
 from src.fetcher.registry import load_source_registry
 from src.fetcher.rss import fetch_rss
+from src.fetcher.search_fallback import search_fallback_articles
 from src.fetcher.scraper import scrape_source
 from src.storage.db import save_articles
 from src.utils.config import Settings, load_config
@@ -81,7 +82,9 @@ async def fetch_all_sources_report(
         database_path = database_path or app_config.settings.database_path
 
     if sources is None:
-        sources = load_source_registry()
+        sources = load_source_registry(
+            include_fallback_only=settings.search_fallback_enabled,
+        )
 
     if logger is None:
         logger = get_logger(__name__, pipeline_stage="fetcher")
@@ -170,6 +173,51 @@ async def _fetch_single_source(
     progress_callback: Callable[[str], None] | None,
 ) -> FetchResult:
     async with semaphore:
+        fallback_enabled = _search_fallback_enabled(source=source, settings=settings)
+        if _is_fallback_only_source(source=source, settings=settings):
+            emit_progress(
+                progress_callback,
+                f"Source {source.name} is fallback-only; running Brave search fallback.",
+            )
+            try:
+                articles = await _run_search_fallback(
+                    source=source,
+                    client=client,
+                    settings=settings,
+                    rate_limiter=rate_limiter,
+                    robots_policy=robots_policy,
+                    allow_robots_network_fallback=allow_robots_network_fallback,
+                    logger=logger,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "source_search_fallback_failed",
+                    source=source.name,
+                    source_method=source.method,
+                    source_url=source.url,
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                    fallback_only=True,
+                )
+                emit_progress(
+                    progress_callback,
+                    f"Source failed: {source.name} (search fallback) - {exc}",
+                )
+                return False, []
+
+            _log_source_fetch_complete(
+                logger=logger,
+                source=source,
+                article_count=len(articles),
+                fetch_path="search_fallback_only",
+            )
+            emit_progress(
+                progress_callback,
+                f"Fetched {source.name} via search fallback: "
+                f"{len(articles)} {_pluralize(len(articles), 'article')}.",
+            )
+            return True, articles
+
         try:
             articles = await _dispatch_source_fetch(
                 source=source,
@@ -181,6 +229,50 @@ async def _fetch_single_source(
                 now=now,
             )
         except Exception as exc:
+            if fallback_enabled:
+                emit_progress(
+                    progress_callback,
+                    f"Direct fetch failed for {source.name}; trying Brave search fallback.",
+                )
+                try:
+                    articles = await _run_search_fallback(
+                        source=source,
+                        client=client,
+                        settings=settings,
+                        rate_limiter=rate_limiter,
+                        robots_policy=robots_policy,
+                        allow_robots_network_fallback=allow_robots_network_fallback,
+                        logger=logger,
+                    )
+                except Exception as fallback_exc:
+                    logger.warning(
+                        "source_search_fallback_failed",
+                        source=source.name,
+                        source_method=source.method,
+                        source_url=source.url,
+                        error=str(fallback_exc),
+                        error_type=type(fallback_exc).__name__,
+                        direct_fetch_error=str(exc),
+                    )
+                    emit_progress(
+                        progress_callback,
+                        f"Source failed: {source.name} ({source.method}) - {fallback_exc}",
+                    )
+                    return False, []
+
+                _log_source_fetch_complete(
+                    logger=logger,
+                    source=source,
+                    article_count=len(articles),
+                    fetch_path="search_fallback_after_failure",
+                )
+                emit_progress(
+                    progress_callback,
+                    f"Fetched {source.name} via search fallback: "
+                    f"{len(articles)} {_pluralize(len(articles), 'article')}.",
+                )
+                return True, articles
+
             logger.warning(
                 "source_fetch_failed",
                 source=source.name,
@@ -195,18 +287,67 @@ async def _fetch_single_source(
             )
             return False, []
 
-        logger.info(
-            "source_fetch_complete",
-            source=source.name,
-            source_method=source.method,
-            source_url=source.url,
-            article_count=len(articles),
+        if articles or not fallback_enabled:
+            _log_source_fetch_complete(
+                logger=logger,
+                source=source,
+                article_count=len(articles),
+                fetch_path="direct",
+            )
+            emit_progress(
+                progress_callback,
+                f"Fetched {source.name}: {len(articles)} {_pluralize(len(articles), 'article')}.",
+            )
+            return True, articles
+
+        emit_progress(
+            progress_callback,
+            f"Source {source.name} returned 0 direct articles; trying Brave search fallback.",
+        )
+        try:
+            fallback_articles = await _run_search_fallback(
+                source=source,
+                client=client,
+                settings=settings,
+                rate_limiter=rate_limiter,
+                robots_policy=robots_policy,
+                allow_robots_network_fallback=allow_robots_network_fallback,
+                logger=logger,
+            )
+        except Exception as exc:
+            logger.warning(
+                "source_search_fallback_failed",
+                source=source.name,
+                source_method=source.method,
+                source_url=source.url,
+                error=str(exc),
+                error_type=type(exc).__name__,
+                direct_fetch_succeeded=True,
+            )
+            _log_source_fetch_complete(
+                logger=logger,
+                source=source,
+                article_count=0,
+                fetch_path="direct_empty_fallback_failed",
+            )
+            emit_progress(
+                progress_callback,
+                f"Fetched {source.name}: 0 articles.",
+            )
+            return True, articles
+
+        _log_source_fetch_complete(
+            logger=logger,
+            source=source,
+            article_count=len(fallback_articles),
+            fetch_path="search_fallback_after_empty",
         )
         emit_progress(
             progress_callback,
-            f"Fetched {source.name}: {len(articles)} {_pluralize(len(articles), 'article')}.",
+            f"Fetched {source.name} via search fallback: "
+            f"{len(fallback_articles)} {_pluralize(len(fallback_articles), 'article')}.",
         )
-        return True, articles
+        return True, fallback_articles
 
 
 async def _dispatch_source_fetch(
@@ -236,6 +377,65 @@ async def _dispatch_source_fetch(
         return await scrape_source(source, **shared_kwargs)
 
     raise ValueError(f"Unsupported source method: {source.method}")
+
+
+async def _run_search_fallback(
+    *,
+    source: Source,
+    client: httpx.AsyncClient,
+    settings: Settings,
+    rate_limiter: DomainRateLimiter,
+    robots_policy: RobotsPolicy,
+    allow_robots_network_fallback: bool,
+    logger,
+) -> list[RawArticle]:
+    return await search_fallback_articles(
+        source,
+        client=client,
+        settings=settings,
+        rate_limiter=rate_limiter,
+        robots_policy=robots_policy,
+        allow_robots_network_fallback=allow_robots_network_fallback,
+        logger=logger,
+    )
+
+
+def _search_fallback_enabled(*, source: Source, settings: Settings) -> bool:
+    if not settings.search_fallback_enabled:
+        return False
+    if source.active:
+        if source.fallback_search.enabled_explicit:
+            return source.fallback_search.enabled
+        return True
+    return (
+        source.fallback_search.enabled
+        and source.fallback_search.include_when_inactive
+    )
+
+
+def _is_fallback_only_source(*, source: Source, settings: Settings) -> bool:
+    return (
+        not source.active
+        and _search_fallback_enabled(source=source, settings=settings)
+        and source.fallback_search.include_when_inactive
+    )
+
+
+def _log_source_fetch_complete(
+    *,
+    logger,
+    source: Source,
+    article_count: int,
+    fetch_path: str,
+) -> None:
+    logger.info(
+        "source_fetch_complete",
+        source=source.name,
+        source_method=source.method,
+        source_url=source.url,
+        article_count=article_count,
+        fetch_path=fetch_path,
+    )
 
 
 def _count_fetch_results(results: Sequence[FetchResult]) -> tuple[int, int]:

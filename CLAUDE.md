@@ -57,6 +57,7 @@ dpns/
 ├── .env.example
 ├── config/
 │   ├── sources.yaml            # Source registry (URL, tier, method, selectors)
+│   ├── search_fallback_allowlist.yaml # Trusted publisher allowlist for Brave fallback
 │   ├── recipients.yaml         # Email distribution list
 │   └── settings.yaml           # Pipeline tuning (thresholds, limits, schedule)
 ├── prompts/
@@ -66,6 +67,7 @@ dpns/
 ├── src/
 │   ├── main.py                 # Pipeline orchestrator
 │   ├── fetcher/                # RSS, scraping, dedup, registry
+│   │   ├── search_fallback.py  # Brave-backed fallback discovery + allowlist gate
 │   ├── analyzer/               # LLM client, relevance scoring, digest composition
 │   ├── renderer/               # HTML + plain-text email builders
 │   ├── sender/                 # AgentMail integration
@@ -104,7 +106,7 @@ dpns/
 ### Content Sources
 - Sources are tiered (Tier 1 = must-fetch, Tier 2 = supplemental, Tier 3 = conditional).
 - Source config in `config/sources.yaml` — adding/removing sources requires no code change (F-08).
-- Current validated active set: 16 sources total, with 6 RSS feeds and 10 scrape sources.
+- Current validated active set: 16 sources total, with 6 RSS feeds, 9 direct scrape sources, and 1 fallback-only source.
 - RSS-first strategy; web scraping only where RSS is unavailable.
 - Live fetch freshness window is currently 7 days.
 - Robots.txt respected; 1 req/sec per domain rate limit.
@@ -112,6 +114,10 @@ dpns/
 - If the DPNS-managed HTTP client gets `401/403` on `robots.txt`, the fetcher may do one fallback retry for the robots file only.
 - If that retry fails, the policy remains deny-by-default unless `robots.txt` is confirmed missing (`404/410`).
 - Caller-supplied `httpx.AsyncClient` instances are not bypassed during robots evaluation.
+- With `search_fallback_enabled: true`, active sources automatically try Brave search fallback after a direct failure or a direct fetch that returns `0` recent articles.
+- Inactive sources can be reintroduced as fallback-only with `fallback_search.enabled: true` and `fallback_search.include_when_inactive: true`.
+- Search fallback only accepts publishers from `config/search_fallback_allowlist.yaml`, rejects denylisted/user-generated domains, and re-checks candidate-site robots before fetching article metadata.
+- Fallback articles persist `origin_source` and `discovery_method=search_fallback` while keeping the actual publisher as `source`.
 
 ### Email Design
 - Current desktop max width: 880px, table-based layout for Outlook compatibility.
@@ -147,6 +153,11 @@ LLM_MODEL_FALLBACK=anthropic/claude-haiku-4.5
 RSS_LOOKBACK_HOURS=168
 EMAIL_MAX_WIDTH_PX=880
 ISSUE_NUMBER_OVERRIDE=0
+SEARCH_FALLBACK_ENABLED=true
+SEARCH_FALLBACK_PROVIDER=brave
+SEARCH_FALLBACK_TIMEOUT_SECONDS=15
+SEARCH_FALLBACK_MAX_RESULTS_PER_SOURCE=3
+BRAVE_SEARCH_API_KEY=...
 ```
 
 ---

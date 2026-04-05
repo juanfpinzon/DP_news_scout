@@ -153,7 +153,7 @@ Create config/sources.yaml with ALL sources:
 
 Build src/fetcher/registry.py:
   - Load sources.yaml
-  - Filter by active=true
+  - Filter by active=true, while still allowing explicitly configured fallback-only sources
   - Sort by tier (1 first)
   - Return list of Source dataclass objects
 
@@ -162,6 +162,7 @@ Research and populate actual RSS feed URLs for the initial source set.
 REVISION COMPLETED (2026-04-04):
   - Implemented scripts/seed_sources.py (was a stub) — validates all URLs and selectors.
   - Switched McKinsey, Hackett Group, HBR to confirmed working RSS feeds.
+  - Deactivated SAP Ariba for direct crawling because `news.sap.com` robots.txt disallows all generic crawling.
   - Fixed DPW domain (digitalprocurementworld.com → conference.dpw.ai).
   - Fixed P&G URL (news.pg.com → us.pg.com/newsroom redirect).
   - Tuned selectors for Webflow sites: Archlet, Keelvar, Zip (custom CSS selectors).
@@ -171,7 +172,8 @@ REVISION COMPLETED (2026-04-04):
     Gartner, BCG, Kearney, Deloitte, Accenture, PwC, EY, Coupa, JAGGAER, Ivalua,
     Supply Chain Digital, Procurious, Unilever, Kraft Heinz, Mondelez, P&G,
     Procurement Leaders (paywall).
-  - Result: 16 active sources, all passing validation (0 failures, 0 warnings).
+  - Result at that stage: 15 directly fetched active sources after SAP Ariba direct deactivation; remaining active sources passed validation.
+  - Follow-up on 2026-04-05: implemented Brave-backed search fallback with an allowlist gate, reintroduced SAP Ariba as a fallback-only source, and restored the active configured set to 16 sources total.
 ```
 
 **Task 2.1.2: RSS feed parser** ✅

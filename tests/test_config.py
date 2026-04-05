@@ -27,6 +27,10 @@ def test_load_config_reads_defaults() -> None:
     assert config.settings.issue_number_override == 0
     assert config.settings.recency_priority_window_days == 7
     assert config.settings.reuse_seen_db_window_days == 7
+    assert config.settings.search_fallback_enabled is True
+    assert config.settings.search_fallback_provider == "brave"
+    assert config.settings.search_fallback_timeout_seconds == 15
+    assert config.settings.search_fallback_max_results_per_source == 3
     assert config.settings.timezone == "Central European Time"
     assert config.settings.llm_scoring_model == "anthropic/claude-haiku-4.5"
     assert config.settings.llm_digest_model == "anthropic/claude-sonnet-4-6"
@@ -44,6 +48,20 @@ def test_load_config_allows_env_override(monkeypatch: pytest.MonkeyPatch) -> Non
     config = load_config()
 
     assert config.settings.max_digest_items == 12
+
+
+def test_load_config_reads_brave_env_and_fallback_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("BRAVE_SEARCH_API_KEY", "brave-key")
+    monkeypatch.setenv("SEARCH_FALLBACK_ENABLED", "false")
+    monkeypatch.setenv("SEARCH_FALLBACK_MAX_RESULTS_PER_SOURCE", "2")
+
+    config = load_config()
+
+    assert config.env.brave_search_api_key == "brave-key"
+    assert config.settings.search_fallback_enabled is False
+    assert config.settings.search_fallback_max_results_per_source == 2
 
 
 def test_load_config_allows_stage_specific_model_env_overrides(

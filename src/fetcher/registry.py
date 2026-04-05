@@ -5,7 +5,7 @@ from typing import Any
 
 import yaml
 
-from src.fetcher.models import Source
+from src.fetcher.models import SearchFallbackConfig, Source
 from src.utils.config import CONFIG_DIR, ConfigError
 from src.utils.source_validation import validate_source_payload
 
@@ -16,6 +16,7 @@ def load_source_registry(
     path: Path | None = None,
     *,
     active_only: bool = True,
+    include_fallback_only: bool = False,
 ) -> list[Source]:
     registry_path = path or DEFAULT_SOURCE_REGISTRY
     raw_config = _read_registry(registry_path)
@@ -29,7 +30,16 @@ def load_source_registry(
             raise ConfigError(f"sources[{index}] must be a mapping")
 
         source = _build_source(item, index)
-        if active_only and not source.active:
+        if active_only:
+            if source.active:
+                sources.append(source)
+                continue
+            if (
+                include_fallback_only
+                and source.fallback_search.enabled
+                and source.fallback_search.include_when_inactive
+            ):
+                sources.append(source)
             continue
         sources.append(source)
 
@@ -58,4 +68,5 @@ def _build_source(payload: dict[str, Any], index: int) -> Source:
         active=normalized["active"],
         category=normalized["category"],
         selectors=normalized["selectors"],
+        fallback_search=SearchFallbackConfig(**normalized["fallback_search"]),
     )
