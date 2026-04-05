@@ -8,8 +8,8 @@ on:
     - cron: "0 9 * * 1-5"
       timezone: "Europe/Madrid"
     # Temporary cron smoke test: run every 5 minutes in dry-run mode.
+    # Use plain UTC cron here to isolate timezone-related schedule issues.
     - cron: "*/5 * * * *"
-      timezone: "Europe/Madrid"
   workflow_dispatch:
     inputs:
       dry_run:
