@@ -1,15 +1,6 @@
 name: Daily Digest
 
 on:
-  schedule:
-    # GitHub Actions supports timezone-aware schedules.
-    # 09:00 Europe/Madrid == 09:00 Spain local time year-round.
-    # This is 08:00 UTC in winter and 07:00 UTC in summer.
-    - cron: "0 9 * * 1-5"
-      timezone: "Europe/Madrid"
-    # Temporary cron smoke test: run every 5 minutes in dry-run mode.
-    # Use plain UTC cron here to isolate timezone-related schedule issues.
-    - cron: "*/5 * * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -17,6 +8,9 @@ on:
         required: false
         default: false
         type: boolean
+  repository_dispatch:
+    types:
+      - run-daily-digest
 
 permissions:
   contents: read
@@ -38,7 +32,7 @@ jobs:
       FEEDBACK_SUBJECT: ${{ secrets.FEEDBACK_SUBJECT }}
       FEEDBACK_URL: ${{ secrets.FEEDBACK_URL }}
       LOG_LEVEL: ${{ vars.LOG_LEVEL || 'INFO' }}
-      DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) || (github.event_name == 'schedule' && github.event.schedule == '*/5 * * * *') }}
+      DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) || (github.event_name == 'repository_dispatch' && github.event.client_payload.dry_run == true) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

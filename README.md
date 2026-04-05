@@ -167,6 +167,36 @@ Additional behavior:
 - Non-dry manual sends append a timestamped subject suffix such as `Manual run 13:40:29 UTC` or `Manual test 08:00:00 UTC` to reduce mail-client threading during repeated tests.
 - Scheduled or direct `python -m src.main` runs keep the canonical subject line without the manual suffix.
 
+## External Scheduler Trigger
+
+The production workflow can be triggered in two ways:
+
+- `workflow_dispatch` for manual GitHub UI or CLI runs
+- `repository_dispatch` with event type `run-daily-digest` for external schedulers
+
+Example GitHub API call for an external scheduler:
+
+```bash
+curl -X POST \
+  -H "Accept: application/vnd.github+json" \
+  -H "Authorization: Bearer YOUR_GITHUB_TOKEN" \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  https://api.github.com/repos/juanfpinzon/DP_news_scout/dispatches \
+  -d '{
+    "event_type": "run-daily-digest",
+    "client_payload": {
+      "source": "external-scheduler",
+      "dry_run": false
+    }
+  }'
+```
+
+Notes:
+
+- Keep `dry_run` set to `false` for the real weekday send.
+- Set `dry_run` to `true` if you want a safe external smoke test.
+- `repository_dispatch` runs use the current default branch workflow definition.
+
 ## Test Runs And SQLite Behavior
 
 This is the most important part for local testing.
