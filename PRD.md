@@ -203,6 +203,8 @@ The digest should read like a **trusted advisor's morning brief**, not a raw RSS
 | S-04 | Support manual trigger for testing / ad-hoc runs | P1 |
 | S-05 | Logging for each pipeline stage (structured, queryable) | P0 |
 
+Current v1 runtime note: the production scheduler posts an external trigger into the GitHub Actions workflow (`repository_dispatch`), while manual operations use `workflow_dispatch`.
+
 ---
 
 ## 5. Non-Functional Requirements
@@ -222,8 +224,14 @@ The digest should read like a **trusted advisor's morning brief**, not a raw RSS
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    SCHEDULER (cron)                      │
-│              Triggers daily at 8:00 AM ET               │
+│        EXTERNAL SCHEDULER (cron-job.org)                │
+│ Triggers weekday workflow at 09:00 Europe/Madrid        │
+└──────────────────────┬──────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────┐
+│         GITHUB ACTIONS WORKFLOW (repository_dispatch)   │
+│     Validates env/secrets and runs the pipeline job     │
 └──────────────────────┬──────────────────────────────────┘
                        │
                        ▼
@@ -273,7 +281,7 @@ The digest should read like a **trusted advisor's morning brief**, not a raw RSS
 | LLM | `openai` SDK via OpenRouter (`base_url="https://openrouter.ai/api/v1"`) | Single gateway to all models; model swappable via config |
 | Email template | Jinja2 + premailer inline CSS | Matches the current implementation and keeps email-client-safe output |
 | Email sending | AgentMail | Built for AI agents; bidirectional email; simple Python SDK; free tier available |
-| Scheduling | GitHub Actions cron / Railway cron / `crontab` on a VPS | Zero-infra option (GH Actions) or cheap VPS |
+| Scheduling | cron-job.org -> GitHub Actions `repository_dispatch` | Free external scheduler with GitHub-hosted execution |
 | Storage | SQLite (local) or Supabase (hosted) | Article dedup, run history, delivery logs |
 | Config | YAML files + `.env` for secrets | Human-readable, easy to edit |
 
@@ -402,7 +410,7 @@ This allows non-developers to refine the editorial voice without touching code.
 | # | Question | Decision |
 |---|----------|----------|
 | 1 | **Sender identity** | AgentMail inbox. `AGENTMAIL_INBOX_ID` is provided by the user at setup time — the setup process must prompt for it. |
-| 2 | **Internal vs. external hosting** | Fully external: GitHub Actions (scheduler) + OpenRouter (LLM) + AgentMail (email). No PepsiCo infra required. |
+| 2 | **Internal vs. external hosting** | Fully external: cron-job.org (scheduler) + GitHub Actions (runner) + OpenRouter (LLM) + AgentMail (email). No PepsiCo infra required. |
 | 3 | **Platforms in use** | SAP / SAP Ariba, Archlet, Keelvar, Selectica, SpendhQ, Pirt, Tirzo. Used to tailor the relevance scoring prompt and "Why it matters" context. |
 | 4 | **Recipient management** | Admin-managed config file (`config/recipients.yaml`) for v1. Self-serve subscribe/unsubscribe is a v2 enhancement. |
 | 5 | **Content approval** | No human review gate for v1. Revisit after PoC — manual spot-checks during the dry-run week (Task 7.1.1) will inform whether a review step is needed. |

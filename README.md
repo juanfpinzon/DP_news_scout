@@ -13,6 +13,7 @@ Digital Procurement News Scout (DPNS) is a daily procurement and digital transfo
 
 - Live pipeline entry point: `python -m src.main`
 - Manual operator entry point: `python scripts/run_manual.py`
+- Production scheduler: `cron-job.org` calling GitHub Actions via `repository_dispatch`
 - Mock-render preview tool: `python scripts/test_email.py`
 - SQLite storage: `data/dpns.db`
 - Live fetch freshness window: 7 days
@@ -165,14 +166,16 @@ Mutually exclusive or constrained combinations:
 Additional behavior:
 
 - Non-dry manual sends append a timestamped subject suffix such as `Manual run 13:40:29 UTC` or `Manual test 08:00:00 UTC` to reduce mail-client threading during repeated tests.
-- Scheduled or direct `python -m src.main` runs keep the canonical subject line without the manual suffix.
+- Externally triggered workflow runs and direct `python -m src.main` runs keep the canonical subject line without the manual suffix.
 
 ## External Scheduler Trigger
 
-The production workflow can be triggered in two ways:
+The workflow supports two operational triggers:
 
 - `workflow_dispatch` for manual GitHub UI or CLI runs
 - `repository_dispatch` with event type `run-daily-digest` for external schedulers
+
+Current production scheduling uses `cron-job.org` to POST a `repository_dispatch` event to the default branch workflow. Native GitHub scheduled workflows are not the active production trigger for this repository.
 
 Example GitHub API call for an external scheduler:
 
@@ -196,6 +199,7 @@ Notes:
 - Keep `dry_run` set to `false` for the real weekday send.
 - Set `dry_run` to `true` if you want a safe external smoke test.
 - `repository_dispatch` runs use the current default branch workflow definition.
+- Recommended production schedule: weekdays at `09:00` in `Europe/Madrid`.
 
 ## Test Runs And SQLite Behavior
 

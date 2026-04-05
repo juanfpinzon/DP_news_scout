@@ -7,7 +7,7 @@ This plan breaks the DPNS project into phases, epics, and individual tasks sized
 This file is a historical implementation plan. `README.md` and `AGENTS.md` are the canonical current-runtime references; completed-task notes below have been updated where implementation details materially changed.
 
 **Estimated total effort:** 5–7 days of focused development
-**Tech stack:** Python 3.11+ · httpx · feedparser · BeautifulSoup4 · openai SDK (via OpenRouter) · Jinja2 · AgentMail · SQLite · GitHub Actions
+**Tech stack:** Python 3.11+ · httpx · feedparser · BeautifulSoup4 · openai SDK (via OpenRouter) · Jinja2 · AgentMail · SQLite · GitHub Actions · cron-job.org
 
 ---
 
@@ -70,7 +70,7 @@ dpns/
 │   └── seed_sources.py         # Populate source registry
 └── .github/
     └── workflows/
-        └── daily_digest.yml    # GitHub Actions cron schedule
+        └── daily_digest.yml    # GitHub Actions workflow entrypoint
 ```
 
 ---
@@ -440,16 +440,18 @@ Build scripts/run_manual.py:
   - Call pipeline with appropriate flags
 ```
 
-**Task 5.1.4: GitHub Actions cron** ✅
+**Task 5.1.4: GitHub Actions workflow + scheduler integration** ✅
 ```
 Create .github/workflows/daily_digest.yml:
-  - cron: "0 13 * * 1-5"  (1 PM UTC = 9 AM ET, weekdays only)
+  - Manual trigger: workflow_dispatch
+  - External trigger: repository_dispatch (event type: run-daily-digest)
   - Steps:
     1. Checkout repo
     2. Setup Python 3.11
     3. Install dependencies
     4. Run pipeline: python -m src.main
   - Secrets: OPENROUTER_API_KEY, AGENTMAIL_API_KEY, AGENTMAIL_INBOX_ID, EMAIL_FROM, etc.
+  - Production schedule handled externally by cron-job.org
   - Notifications: alert on failure (GitHub notifications or Slack webhook)
 
 Alternative: Railway/Render cron job config if self-hosted.
@@ -552,7 +554,7 @@ Build scripts/seed_sources.py:
 **Task 7.1.3: Full launch**
 ```
 - Add all recipients to config
-- Enable cron schedule
+- Enable external scheduler
 - Monitor first week closely
 - Set up alerts for pipeline failures
 ```
@@ -654,7 +656,7 @@ PIPELINE_TIMEOUT=600
 |------|----------|
 | OpenRouter API (~15 articles/day × 22 weekdays, scoring + composition) | ~$15–25 |
 | AgentMail (free tier) | $0 |
-| GitHub Actions (free tier: 2,000 min/month) | $0 |
+| cron-job.org + GitHub Actions | $0 |
 | Domain for email sender (optional) | ~$12/year |
 | **Total** | **~$15–30/month** |
 

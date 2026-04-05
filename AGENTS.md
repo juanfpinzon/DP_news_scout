@@ -15,7 +15,7 @@ Use this file as the default orientation doc for coding agents working in this r
 
 ## Architecture
 
-Four-stage sequential pipeline triggered by a daily cron (GitHub Actions):
+Four-stage sequential pipeline triggered in production by `cron-job.org` calling the GitHub Actions workflow via `repository_dispatch`. Manual GitHub testing uses `workflow_dispatch`.
 
 ```
 Fetcher → Analyzer → Renderer → Sender
@@ -44,7 +44,8 @@ Primary operator entry point for local work: `python scripts/run_manual.py`
 - **SQLite** via the Python `sqlite3` storage layer (article storage, run logs, delivery records)
 - **structlog** (structured logging)
 - **pyyaml** + **python-dotenv** (config)
-- **GitHub Actions** (cron scheduler)
+- **GitHub Actions** (workflow runner for manual and external-dispatch runs)
+- **cron-job.org** (production scheduler)
 
 ---
 
@@ -86,7 +87,7 @@ dpns/
 │   ├── test_email.py           # Send a test email with mock data
 │   └── seed_sources.py         # Validate all source URLs in sources.yaml
 └── .github/workflows/
-    └── daily_digest.yml        # Weekday cron at 8 AM UTC (9 AM CET, standard time)
+    └── daily_digest.yml        # Manual + repository_dispatch workflow entrypoint
 ```
 
 ---
@@ -177,6 +178,12 @@ ISSUE_NUMBER_OVERRIDE=0
 ---
 
 ## Development Workflow
+
+### Runtime Triggering
+
+- Production schedule: `cron-job.org` posts `repository_dispatch` with event type `run-daily-digest`
+- Manual GitHub run: `workflow_dispatch`
+- Local operator run: `python scripts/run_manual.py`
 
 ### Running the pipeline locally
 ```bash
@@ -338,7 +345,7 @@ Reference these IDs when building or reviewing features:
 
 - OpenRouter API: ~$15–25/month (scoring + composition, ~15 articles/day × 22 weekdays)
 - Email delivery (AgentMail free tier): $0
-- Scheduling (GitHub Actions free tier): $0
+- Scheduling (cron-job.org free tier + GitHub Actions runner): $0
 - **Total target: < $50/month** (PRD NFR)
 
 ---
