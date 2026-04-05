@@ -89,6 +89,7 @@ async def fetch_all_sources_report(
     semaphore = asyncio.Semaphore(settings.fetch_concurrency)
     rate_limiter = DomainRateLimiter(settings.rate_limit_seconds)
     robots_policy = RobotsPolicy()
+    allow_robots_network_fallback = client is None
 
     async with managed_async_client(client, timeout_seconds=settings.request_timeout_seconds) as active_client:
         results = await asyncio.gather(
@@ -100,6 +101,7 @@ async def fetch_all_sources_report(
                     settings=settings,
                     rate_limiter=rate_limiter,
                     robots_policy=robots_policy,
+                    allow_robots_network_fallback=allow_robots_network_fallback,
                     logger=logger,
                     now=now,
                     progress_callback=progress_callback,
@@ -162,6 +164,7 @@ async def _fetch_single_source(
     settings: Settings,
     rate_limiter: DomainRateLimiter,
     robots_policy: RobotsPolicy,
+    allow_robots_network_fallback: bool,
     logger,
     now: datetime | None,
     progress_callback: Callable[[str], None] | None,
@@ -174,6 +177,7 @@ async def _fetch_single_source(
                 settings=settings,
                 rate_limiter=rate_limiter,
                 robots_policy=robots_policy,
+                allow_robots_network_fallback=allow_robots_network_fallback,
                 now=now,
             )
         except Exception as exc:
@@ -212,10 +216,12 @@ async def _dispatch_source_fetch(
     settings: Settings,
     rate_limiter: DomainRateLimiter,
     robots_policy: RobotsPolicy,
+    allow_robots_network_fallback: bool,
     now: datetime | None,
 ) -> list[RawArticle]:
     shared_kwargs = {
         "client": client,
+        "allow_robots_network_fallback": allow_robots_network_fallback,
         "lookback_hours": settings.rss_lookback_hours,
         "max_articles": settings.max_articles_per_source,
         "timeout_seconds": settings.request_timeout_seconds,

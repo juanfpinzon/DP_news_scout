@@ -90,6 +90,7 @@ async def scrape_source(
     source: Source,
     *,
     client: httpx.AsyncClient | None = None,
+    allow_robots_network_fallback: bool | None = None,
     lookback_hours: int = 48,
     max_articles: int = 10,
     timeout_seconds: float = 15.0,
@@ -99,7 +100,8 @@ async def scrape_source(
 ) -> list[RawArticle]:
     headers = build_request_headers(source.name, source.url)
     active_now = now or datetime.now(timezone.utc)
-    allow_robots_network_fallback = client is None
+    if allow_robots_network_fallback is None:
+        allow_robots_network_fallback = client is None
     async with managed_async_client(client, timeout_seconds=timeout_seconds) as active_client:
         if robots_policy is not None:
             allowed = await robots_policy.allows(

@@ -1183,6 +1183,56 @@ def test_fetch_all_sources_report_can_skip_database_persistence(tmp_path) -> Non
     assert get_recent_urls(database_path, days=7) == set()
 
 
+def test_fetch_all_sources_report_enables_robots_fallback_for_managed_client(
+    tmp_path, monkeypatch
+) -> None:
+    now = datetime(2026, 3, 31, 9, 0, tzinfo=timezone.utc)
+    database_path = str(tmp_path / "dpns.db")
+    logger = DummyLogger()
+    settings = _settings(database_path)
+    source = Source(
+        name="Managed Client Feed",
+        url="https://example.com/managed.xml",
+        tier=1,
+        method="rss",
+        active=True,
+        category="trade_media",
+    )
+
+    async def fake_fetch_rss(source_arg: Source, **kwargs) -> list[RawArticle]:
+        assert source_arg == source
+        assert kwargs["allow_robots_network_fallback"] is True
+        assert isinstance(kwargs["client"], httpx.AsyncClient)
+        return [
+            RawArticle(
+                url="https://example.com/managed-story",
+                title="Managed story",
+                source=source_arg.name,
+                source_url=source_arg.url,
+                category=source_arg.category,
+                published_at="2026-03-30T08:00:00+00:00",
+                fetched_at=now.isoformat(),
+            )
+        ]
+
+    monkeypatch.setattr(fetcher_module, "fetch_rss", fake_fetch_rss)
+
+    summary = asyncio.run(
+        fetch_all_sources_report(
+            sources=[source],
+            settings=settings,
+            database_path=database_path,
+            logger=logger,
+            now=now,
+            persist_to_db=False,
+        )
+    )
+
+    assert [article.url for article in summary.articles] == ["https://example.com/managed-story"]
+    assert summary.sources_succeeded == 1
+    assert summary.sources_failed == 0
+
+
 def _settings(database_path: str) -> Settings:
     return Settings(
         max_articles_per_source=10,
