@@ -220,7 +220,7 @@ class TestRenderDigest:
 
         assert "Share feedback" in html
         assert 'href="mailto:feedback@example.com?subject=DPNS%20Feedback"' in html
-        assert "Vibe-coded with &lt;3 by Juan Pinzon" in html
+        assert "Vibe-coded with ❤️ by Juan Pinzon" in html
 
     def test_empty_date_omits_middot(self) -> None:
         digest = Digest(
@@ -327,7 +327,7 @@ class TestRenderPlaintext:
         monkeypatch.setenv("FEEDBACK_EMAIL", "test@example.com")
         text = render_plaintext(_make_full_digest(), issue_number=1, date="April 4, 2026")
         assert "Feedback: test@example.com" in text
-        assert "Vibe-coded with <3 by Juan Pinzon" in text
+        assert "Vibe-coded with ❤️ by Juan Pinzon" in text
 
     def test_wraps_long_why_it_matters_lines(self) -> None:
         long_reason = (

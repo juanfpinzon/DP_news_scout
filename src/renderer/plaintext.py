@@ -112,7 +112,7 @@ def render_plaintext(digest: Digest, issue_number: int, date: str) -> str:
     if feedback:
         parts.append(_center(f"Feedback: {feedback}"))
     parts.append(_center(f"{date} · Issue #{issue_number}"))
-    parts.append(_center("Vibe-coded with <3 by Juan Pinzon"))
+    parts.append(_center("Vibe-coded with ❤️ by Juan Pinzon"))
     parts.append("")
 
     return "\n".join(parts)
