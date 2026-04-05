@@ -99,12 +99,14 @@ async def scrape_source(
 ) -> list[RawArticle]:
     headers = build_request_headers(source.name, source.url)
     active_now = now or datetime.now(timezone.utc)
+    allow_robots_network_fallback = client is None
     async with managed_async_client(client, timeout_seconds=timeout_seconds) as active_client:
         if robots_policy is not None:
             allowed = await robots_policy.allows(
                 client=active_client,
                 url=source.url,
                 user_agent=headers["User-Agent"],
+                allow_network_fallback=allow_robots_network_fallback,
             )
             if not allowed:
                 raise PermissionError(f"robots.txt disallows fetching {source.url}")
@@ -146,6 +148,7 @@ async def scrape_source(
             max_articles=max_articles,
             rate_limiter=rate_limiter,
             robots_policy=robots_policy,
+            allow_robots_network_fallback=allow_robots_network_fallback,
         )
         if articles:
             return articles
@@ -166,6 +169,7 @@ async def scrape_source(
             max_articles=max_articles,
             rate_limiter=rate_limiter,
             robots_policy=robots_policy,
+            allow_robots_network_fallback=allow_robots_network_fallback,
         )
         if fallback_articles:
             return fallback_articles
@@ -298,6 +302,7 @@ async def _recover_missing_dates(
     max_articles: int,
     rate_limiter: DomainRateLimiter | None,
     robots_policy: RobotsPolicy | None,
+    allow_robots_network_fallback: bool,
 ) -> list[RawArticle]:
     for article in articles:
         if article.published_at:
@@ -308,6 +313,7 @@ async def _recover_missing_dates(
             client=client,
             rate_limiter=rate_limiter,
             robots_policy=robots_policy,
+            allow_robots_network_fallback=allow_robots_network_fallback,
         )
         if recovered is not None:
             article.published_at = recovered.isoformat()
@@ -333,6 +339,7 @@ async def _fetch_article_published_at(
     client: httpx.AsyncClient,
     rate_limiter: DomainRateLimiter | None,
     robots_policy: RobotsPolicy | None,
+    allow_robots_network_fallback: bool,
 ) -> datetime | None:
     headers = build_request_headers(source.name, article_url)
     if robots_policy is not None:
@@ -340,6 +347,7 @@ async def _fetch_article_published_at(
             client=client,
             url=article_url,
             user_agent=headers["User-Agent"],
+            allow_network_fallback=allow_robots_network_fallback,
         )
         if not allowed:
             return None

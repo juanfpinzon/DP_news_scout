@@ -38,12 +38,14 @@ async def fetch_rss(
 ) -> list[RawArticle]:
     headers = build_request_headers(source.name, source.url)
     active_now = now or datetime.now(timezone.utc)
+    allow_robots_network_fallback = client is None
     async with managed_async_client(client, timeout_seconds=timeout_seconds) as active_client:
         if robots_policy is not None:
             allowed = await robots_policy.allows(
                 client=active_client,
                 url=source.url,
                 user_agent=headers["User-Agent"],
+                allow_network_fallback=allow_robots_network_fallback,
             )
             if not allowed:
                 raise PermissionError(f"robots.txt disallows fetching {source.url}")

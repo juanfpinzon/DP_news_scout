@@ -7,6 +7,7 @@ from textwrap import dedent
 import httpx
 import pytest
 import src.fetcher as fetcher_module
+import src.fetcher.common as fetcher_common
 
 from src.fetcher import (
     fetch_all_sources,
@@ -15,6 +16,7 @@ from src.fetcher import (
     load_source_registry,
     scrape_source,
 )
+from src.fetcher.common import RobotsPolicy
 from src.fetcher.dedup import deduplicate_articles, normalize_url
 from src.fetcher.models import RawArticle, Source
 from src.fetcher.rss import RSSFetchError
@@ -330,6 +332,149 @@ def test_fetch_rss_parses_atom_content_and_relative_links() -> None:
     assert articles[0].url == "https://example.com/insights/fresh-atom-story"
     assert articles[0].summary == "Atom summary."
     assert articles[0].author == "Feed Author"
+
+
+def test_robots_policy_falls_back_when_httpx_is_forbidden(monkeypatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(403, text="forbidden")
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    def fake_fetch_robots_txt_with_urllib(*, robots_url: str, user_agent: str) -> tuple[int, str]:
+        assert robots_url == "https://example.com/robots.txt"
+        assert user_agent == "Mozilla/5.0"
+        return 200, "User-agent: *\nDisallow: /private/\n"
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(
+        fetcher_common,
+        "_fetch_robots_txt_with_urllib",
+        fake_fetch_robots_txt_with_urllib,
+    )
+    policy = RobotsPolicy()
+
+    try:
+        assert asyncio.run(
+            policy.allows(
+                client=client,
+                url="https://example.com/feed.xml",
+                user_agent="Mozilla/5.0",
+                allow_network_fallback=True,
+            )
+        )
+        assert not asyncio.run(
+            policy.allows(
+                client=client,
+                url="https://example.com/private/page",
+                user_agent="Mozilla/5.0",
+                allow_network_fallback=True,
+            )
+        )
+    finally:
+        asyncio.run(client.aclose())
+
+
+def test_robots_policy_keeps_conservative_block_when_fallback_is_forbidden(monkeypatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(403, text="forbidden")
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    def fake_fetch_robots_txt_with_urllib(*, robots_url: str, user_agent: str) -> tuple[int, str]:
+        assert robots_url == "https://example.com/robots.txt"
+        assert user_agent == "Mozilla/5.0"
+        return 403, "forbidden"
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(
+        fetcher_common,
+        "_fetch_robots_txt_with_urllib",
+        fake_fetch_robots_txt_with_urllib,
+    )
+    policy = RobotsPolicy()
+
+    try:
+        assert not asyncio.run(
+            policy.allows(
+                client=client,
+                url="https://example.com/feed.xml",
+                user_agent="Mozilla/5.0",
+                allow_network_fallback=True,
+            )
+        )
+    finally:
+        asyncio.run(client.aclose())
+
+
+def test_robots_policy_keeps_conservative_block_when_fallback_errors(monkeypatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(403, text="forbidden")
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    def fake_fetch_robots_txt_with_urllib(*, robots_url: str, user_agent: str) -> tuple[int, str]:
+        assert robots_url == "https://example.com/robots.txt"
+        assert user_agent == "Mozilla/5.0"
+        return 503, "upstream error"
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(
+        fetcher_common,
+        "_fetch_robots_txt_with_urllib",
+        fake_fetch_robots_txt_with_urllib,
+    )
+    policy = RobotsPolicy()
+
+    try:
+        assert not asyncio.run(
+            policy.allows(
+                client=client,
+                url="https://example.com/feed.xml",
+                user_agent="Mozilla/5.0",
+                allow_network_fallback=True,
+            )
+        )
+    finally:
+        asyncio.run(client.aclose())
+
+
+def test_fetch_rss_does_not_bypass_supplied_client_for_robots_fallback(monkeypatch) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(403, text="forbidden")
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    def fail_fetch_robots_txt_with_urllib(*, robots_url: str, user_agent: str) -> tuple[int, str]:
+        raise AssertionError(
+            f"Unexpected stdlib robots fallback for {robots_url} with {user_agent}"
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(
+        fetcher_common,
+        "_fetch_robots_txt_with_urllib",
+        fail_fetch_robots_txt_with_urllib,
+    )
+    source = Source(
+        name="Blocked Feed",
+        url="https://example.com/feed.xml",
+        tier=1,
+        method="rss",
+        active=True,
+        category="trade_media",
+    )
+
+    try:
+        with pytest.raises(PermissionError, match="robots.txt disallows fetching"):
+            asyncio.run(
+                fetch_rss(
+                    source,
+                    client=client,
+                    robots_policy=RobotsPolicy(),
+                )
+            )
+    finally:
+        asyncio.run(client.aclose())
 
 
 def test_fetch_rss_wraps_http_status_errors() -> None:

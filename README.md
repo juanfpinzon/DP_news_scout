@@ -64,6 +64,10 @@ Important current behavior:
 - `config/settings.yaml` currently sets `issue_number_override: 0`, so all live/manual runs show `Issue #0`.
 - Digest article selection is source-balanced with `max_digest_items_per_source: 3`.
 - Desktop email width is configurable and currently set to `880px`.
+- RSS and scrape fetches check `robots.txt` before fetching source content.
+- If the DPNS-managed HTTP client gets `401/403` on `robots.txt`, the fetcher performs one fallback retry for the robots file only.
+- If that retry also fails, the fetcher stays conservative and treats the source as disallowed unless `robots.txt` is confirmed missing (`404/410`).
+- Caller-supplied `httpx.AsyncClient` instances are never bypassed during robots checks.
 
 ## Configuration
 
