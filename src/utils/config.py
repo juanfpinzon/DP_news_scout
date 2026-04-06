@@ -40,6 +40,9 @@ class Settings:
     dedup_window_days: int
     request_timeout_seconds: float
     rate_limit_seconds: float
+    global_news_relevance_threshold: int = 5
+    global_news_max_items: int = 3
+    global_news_max_per_source: int = 2
     max_digest_items_per_source: int = 3
     email_max_width_px: int = 880
     issue_number_override: int | None = None
@@ -97,6 +100,9 @@ def load_config(env_file: Path | None = None) -> AppConfig:
         "issue_number_override": None,
         "recency_priority_window_days": 7,
         "reuse_seen_db_window_days": 7,
+        "global_news_relevance_threshold": 5,
+        "global_news_max_items": 3,
+        "global_news_max_per_source": 2,
         "search_fallback_enabled": False,
         "search_fallback_provider": "brave",
         "search_fallback_timeout_seconds": 15.0,
@@ -117,6 +123,21 @@ def load_config(env_file: Path | None = None) -> AppConfig:
             "RELEVANCE_THRESHOLD",
             settings_data,
             "relevance_threshold",
+        ),
+        global_news_relevance_threshold=_get_int(
+            "GLOBAL_NEWS_RELEVANCE_THRESHOLD",
+            settings_data,
+            "global_news_relevance_threshold",
+        ),
+        global_news_max_items=_get_int(
+            "GLOBAL_NEWS_MAX_ITEMS",
+            settings_data,
+            "global_news_max_items",
+        ),
+        global_news_max_per_source=_get_int(
+            "GLOBAL_NEWS_MAX_PER_SOURCE",
+            settings_data,
+            "global_news_max_per_source",
         ),
         digest_send_time=_get_str("DIGEST_SEND_TIME", settings_data, "digest_send_time"),
         timezone=_get_str("TIMEZONE", settings_data, "timezone"),
@@ -360,6 +381,12 @@ def _validate_settings(settings: Settings) -> None:
         raise ConfigError("max_digest_items must be greater than 0")
     if not 1 <= settings.relevance_threshold <= 10:
         raise ConfigError("relevance_threshold must be between 1 and 10")
+    if not 1 <= settings.global_news_relevance_threshold <= 10:
+        raise ConfigError("global_news_relevance_threshold must be between 1 and 10")
+    if settings.global_news_max_items <= 0:
+        raise ConfigError("global_news_max_items must be greater than 0")
+    if settings.global_news_max_per_source <= 0:
+        raise ConfigError("global_news_max_per_source must be greater than 0")
     if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", settings.digest_send_time):
         raise ConfigError("digest_send_time must use HH:MM format")
     if settings.log_level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:

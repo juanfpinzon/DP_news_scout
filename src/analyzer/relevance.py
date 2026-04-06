@@ -46,6 +46,7 @@ async def score_articles(
     *,
     llm_client: Any | None = None,
     settings: Settings | None = None,
+    scoring_prompt_name: str = "relevance_scoring.md",
     threshold: int | None = None,
     batch_size: int = DEFAULT_BATCH_SIZE,
     max_tokens: int = DEFAULT_MAX_TOKENS,
@@ -71,7 +72,7 @@ async def score_articles(
         raise ValueError("threshold must be between 1 and 10")
 
     logger = logger or get_logger(__name__, pipeline_stage="analyzer")
-    system_prompt = _build_system_prompt()
+    system_prompt = _build_system_prompt(scoring_prompt_name=scoring_prompt_name)
 
     owns_client = llm_client is None
     if llm_client is None:
@@ -172,9 +173,9 @@ async def score_articles(
             await active_client.aclose()
 
 
-def _build_system_prompt() -> str:
+def _build_system_prompt(scoring_prompt_name: str = "relevance_scoring.md") -> str:
     context = _load_prompt("context_preamble.md")
-    scoring = _load_prompt("relevance_scoring.md")
+    scoring = _load_prompt(scoring_prompt_name)
     return f"{context}\n\n{scoring}".strip()
 
 

@@ -87,6 +87,29 @@ def render_plaintext(digest: Digest, issue_number: int, date: str) -> str:
                 source_line += f" · {item.date}"
             parts.append(source_line)
 
+    # Global Macro Briefing
+    if digest.global_briefing:
+        parts.append("")
+        parts.append("GLOBAL MACRO BRIEFING")
+        parts.append(THIN_SEPARATOR)
+        for item in digest.global_briefing:
+            parts.append("")
+            parts.append(_wrap(item.headline, width=LINE_WIDTH))
+            parts.append(_wrap(item.summary, width=LINE_WIDTH))
+            parts.append(
+                _wrap(
+                    item.why_it_matters,
+                    width=LINE_WIDTH,
+                    initial_indent="Why it matters: ",
+                    subsequent_indent=" " * len("Why it matters: "),
+                )
+            )
+            parts.append(f"→ {item.url}")
+            source_line = item.source
+            if item.date:
+                source_line += f" · {item.date}"
+            parts.append(source_line)
+
     # Quick Hits
     if digest.quick_hits:
         parts.append("")

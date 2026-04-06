@@ -23,6 +23,9 @@ def test_load_config_reads_defaults() -> None:
     assert config.settings.rss_lookback_hours == 168
     assert config.settings.dedup_window_days == 7
     assert config.settings.max_digest_items_per_source == 3
+    assert config.settings.global_news_relevance_threshold == 5
+    assert config.settings.global_news_max_items == 3
+    assert config.settings.global_news_max_per_source == 2
     assert config.settings.email_max_width_px == 880
     assert config.settings.issue_number_override == 0
     assert config.settings.recency_priority_window_days == 7
@@ -36,6 +39,7 @@ def test_load_config_reads_defaults() -> None:
     assert config.settings.llm_digest_model == "anthropic/claude-sonnet-4-6"
     assert config.settings.llm_model_fallback == "anthropic/claude-haiku-4.5"
     assert len(config.sources) >= 20
+    assert any(source.category == "global_news" for source in config.sources)
     assert config.env.email_from == "news-scout@example.com"
     assert config.default_recipient_group == "test"
     assert set(config.recipient_groups) == {"leadership", "extended", "test"}

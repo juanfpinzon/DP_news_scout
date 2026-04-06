@@ -104,6 +104,274 @@ def test_run_pipeline_happy_path_sends_digest_and_updates_run(tmp_path, monkeypa
     }
 
 
+def test_run_pipeline_includes_global_briefing_when_available(tmp_path, monkeypatch) -> None:
+    config = _build_config(tmp_path=tmp_path, dry_run=False)
+    rendered: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "src.main.load_source_registry",
+        lambda **_kwargs: [
+            _make_source("Source A"),
+            _make_source("Reuters", category="global_news"),
+        ],
+    )
+
+    async def fake_fetch_all_sources_report(**kwargs):
+        source = kwargs["sources"][0]
+        if source.category == "global_news":
+            return _make_fetch_summary(
+                articles=[_make_raw_article(10, source="Reuters", category="global_news")],
+                sources_attempted=1,
+                sources_succeeded=1,
+                sources_failed=0,
+                articles_found=1,
+            )
+        return _make_fetch_summary(
+            articles=[_make_raw_article(1, source="Source A")],
+            sources_attempted=1,
+            sources_succeeded=1,
+            sources_failed=0,
+            articles_found=1,
+        )
+
+    async def fake_score_articles(raw_articles, **kwargs):
+        if kwargs.get("scoring_prompt_name") == "global_news_scoring.md":
+            assert kwargs["threshold"] == config.settings.global_news_relevance_threshold
+            return [_make_scored_article(10, source="Reuters", category="global_news")]
+        return [_make_scored_article(1, source="Source A")]
+
+    async def fake_compose_digest(*_args, **_kwargs):
+        return _make_digest()
+
+    async def fake_compose_global_briefing(*_args, **_kwargs):
+        return [
+            DigestItem(
+                url="https://example.com/article-10",
+                headline="Macro briefing item",
+                summary="Macro summary",
+                why_it_matters="Macro implication",
+                source="Reuters",
+                date="Apr 4, 2026",
+            )
+        ]
+
+    def fake_render_digest(digest: Digest, *_args, **_kwargs) -> str:
+        rendered["html_global_count"] = len(digest.global_briefing)
+        return "<html>digest</html>"
+
+    def fake_render_plaintext(digest: Digest, *_args, **_kwargs) -> str:
+        rendered["text_global_count"] = len(digest.global_briefing)
+        return "digest"
+
+    monkeypatch.setattr("src.main.fetch_all_sources_report", fake_fetch_all_sources_report)
+    monkeypatch.setattr("src.main.score_articles", fake_score_articles)
+    monkeypatch.setattr("src.main.compose_digest", fake_compose_digest)
+    monkeypatch.setattr("src.main.compose_global_briefing", fake_compose_global_briefing)
+    monkeypatch.setattr("src.main.render_digest", fake_render_digest)
+    monkeypatch.setattr("src.main.render_plaintext", fake_render_plaintext)
+    monkeypatch.setattr("src.main.send_digest", lambda *_args, **_kwargs: True)
+
+    result = run_pipeline(
+        config=config,
+        now=datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
+    )
+
+    assert result.status == "success"
+    assert result.sources_fetched == 2
+    assert result.articles_found == 2
+    assert result.relevant_articles == 2
+    assert result.articles_included == 5
+    assert rendered["html_global_count"] == 1
+    assert rendered["text_global_count"] == 1
+
+
+def test_run_pipeline_continues_when_global_scoring_fails(tmp_path, monkeypatch) -> None:
+    config = _build_config(tmp_path=tmp_path, dry_run=False)
+    rendered: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "src.main.load_source_registry",
+        lambda **_kwargs: [
+            _make_source("Source A"),
+            _make_source("Reuters", category="global_news"),
+        ],
+    )
+
+    async def fake_fetch_all_sources_report(**kwargs):
+        source = kwargs["sources"][0]
+        if source.category == "global_news":
+            return _make_fetch_summary(
+                articles=[_make_raw_article(10, source="Reuters", category="global_news")],
+                sources_attempted=1,
+                sources_succeeded=1,
+                sources_failed=0,
+                articles_found=1,
+            )
+        return _make_fetch_summary(
+            articles=[_make_raw_article(1, source="Source A")],
+            sources_attempted=1,
+            sources_succeeded=1,
+            sources_failed=0,
+            articles_found=1,
+        )
+
+    async def fake_score_articles(raw_articles, **kwargs):
+        if kwargs.get("scoring_prompt_name") == "global_news_scoring.md":
+            raise RuntimeError("macro scoring blew up")
+        return [_make_scored_article(1, source="Source A")]
+
+    async def fake_compose_digest(*_args, **_kwargs):
+        return _make_digest()
+
+    async def fake_compose_global_briefing(*_args, **_kwargs):
+        raise AssertionError("compose_global_briefing should not be called")
+
+    def fake_render_digest(digest: Digest, *_args, **_kwargs) -> str:
+        rendered["global_count"] = len(digest.global_briefing)
+        return "<html>digest</html>"
+
+    monkeypatch.setattr("src.main.fetch_all_sources_report", fake_fetch_all_sources_report)
+    monkeypatch.setattr("src.main.score_articles", fake_score_articles)
+    monkeypatch.setattr("src.main.compose_digest", fake_compose_digest)
+    monkeypatch.setattr("src.main.compose_global_briefing", fake_compose_global_briefing)
+    monkeypatch.setattr("src.main.render_digest", fake_render_digest)
+    monkeypatch.setattr("src.main.render_plaintext", lambda *_args, **_kwargs: "digest")
+    monkeypatch.setattr("src.main.send_digest", lambda *_args, **_kwargs: True)
+
+    result = run_pipeline(
+        config=config,
+        now=datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
+    )
+
+    assert result.status == "success"
+    assert result.articles_found == 2
+    assert result.relevant_articles == 1
+    assert result.articles_included == 4
+    assert rendered["global_count"] == 0
+
+
+def test_run_pipeline_routes_fetched_articles_by_article_category(tmp_path, monkeypatch) -> None:
+    config = _build_config(tmp_path=tmp_path, dry_run=True)
+    scored_inputs: dict[str, list[str]] = {}
+
+    monkeypatch.setattr(
+        "src.main.load_source_registry",
+        lambda **_kwargs: [
+            _make_source("Source A"),
+            _make_source("Reuters", category="global_news"),
+        ],
+    )
+
+    async def fake_fetch_all_sources_report(**kwargs):
+        source = kwargs["sources"][0]
+        if source.category == "global_news":
+            return _make_fetch_summary(
+                articles=[_make_raw_article(20, source="Trade Media", category="trade_media")],
+                sources_attempted=1,
+                sources_succeeded=1,
+                sources_failed=0,
+                articles_found=1,
+            )
+        return _make_fetch_summary(
+            articles=[_make_raw_article(10, source="Reuters", category="global_news")],
+            sources_attempted=1,
+            sources_succeeded=1,
+            sources_failed=0,
+            articles_found=1,
+        )
+
+    async def fake_score_articles(raw_articles, **kwargs):
+        key = kwargs.get("scoring_prompt_name", "relevance_scoring.md")
+        scored_inputs[key] = [article.url for article in raw_articles]
+        if key == "global_news_scoring.md":
+            return [_make_scored_article(10, source="Reuters", category="global_news")]
+        return [_make_scored_article(20, source="Trade Media", category="trade_media")]
+
+    monkeypatch.setattr("src.main.fetch_all_sources_report", fake_fetch_all_sources_report)
+    monkeypatch.setattr("src.main.score_articles", fake_score_articles)
+    monkeypatch.setattr("src.main.compose_digest", lambda *_args, **_kwargs: _async_return(_make_digest()))
+    monkeypatch.setattr("src.main.compose_global_briefing", lambda *_args, **_kwargs: _async_return([]))
+    monkeypatch.setattr("src.main.render_digest", lambda *_args, **_kwargs: "<html>digest</html>")
+    monkeypatch.setattr("src.main.render_plaintext", lambda *_args, **_kwargs: "digest")
+    monkeypatch.setattr(
+        "src.main.send_digest",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("send_digest should not be called")),
+    )
+
+    result = run_pipeline(
+        config=config,
+        now=datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
+    )
+
+    assert result.status == "success"
+    assert scored_inputs["relevance_scoring.md"] == ["https://example.com/article-20"]
+    assert scored_inputs["global_news_scoring.md"] == ["https://example.com/article-10"]
+
+
+def test_run_pipeline_reuse_reconstructs_fallback_articles_from_publisher_source(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    config = _build_config(tmp_path=tmp_path, dry_run=True)
+    scored_inputs: dict[str, list[str]] = {}
+
+    save_articles(
+        config.settings.database_path,
+        [
+            ArticleRecord(
+                url="https://www.reuters.com/world/example-story/",
+                title="Macro Article",
+                source="Reuters",
+                origin_source="Source A",
+                discovery_method="search_fallback",
+                published_at="2026-04-04T08:00:00+00:00",
+                fetched_at="2026-04-04T08:05:00+00:00",
+                content_snippet="Macro summary",
+            )
+        ],
+    )
+
+    monkeypatch.setattr(
+        "src.main.load_source_registry",
+        lambda **_kwargs: [
+            _make_source("Source A"),
+            _make_source("Reuters", category="global_news"),
+        ],
+    )
+    monkeypatch.setattr(
+        "src.main.fetch_all_sources_report",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("fetch_all_sources_report should not be called")),
+    )
+
+    async def fake_score_articles(raw_articles, **kwargs):
+        key = kwargs.get("scoring_prompt_name", "relevance_scoring.md")
+        scored_inputs[key] = [article.category for article in raw_articles]
+        if key == "global_news_scoring.md":
+            return [_make_scored_article(1, source="Reuters", category="global_news")]
+        return []
+
+    monkeypatch.setattr("src.main.score_articles", fake_score_articles)
+    monkeypatch.setattr(
+        "src.main.compose_digest",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("compose_digest should not be called")),
+    )
+    monkeypatch.setattr("src.main.compose_global_briefing", lambda *_args, **_kwargs: _async_return([]))
+    monkeypatch.setattr(
+        "src.main.send_digest",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("send_digest should not be called")),
+    )
+
+    result = run_pipeline(
+        config=config,
+        now=datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
+        reuse_seen_db=True,
+    )
+
+    assert result.status == "success"
+    assert scored_inputs["relevance_scoring.md"] == []
+    assert scored_inputs["global_news_scoring.md"] == ["global_news"]
+
+
 def test_run_pipeline_uses_issue_number_override_when_configured(tmp_path, monkeypatch) -> None:
     config = _build_config(tmp_path=tmp_path, dry_run=False, issue_number_override=0)
     sent: dict[str, object] = {}
@@ -863,36 +1131,36 @@ def _build_config(*, tmp_path, dry_run: bool, issue_number_override: int | None 
     )
 
 
-def _make_source(name: str) -> Source:
+def _make_source(name: str, *, category: str = "procurement") -> Source:
     return Source(
         name=name,
         url=f"https://example.com/{name.lower().replace(' ', '-')}.xml",
         tier=1,
         method="rss",
         active=True,
-        category="procurement",
+        category=category,
     )
 
 
-def _make_raw_article(number: int, *, source: str) -> RawArticle:
+def _make_raw_article(number: int, *, source: str, category: str = "procurement") -> RawArticle:
     return RawArticle(
         url=f"https://example.com/article-{number}",
         title=f"Article {number}",
         source=source,
         source_url="https://example.com/feed.xml",
-        category="procurement",
+        category=category,
         published_at="2026-04-04T08:00:00+00:00",
         summary=f"Summary {number}",
     )
 
 
-def _make_scored_article(number: int, *, source: str) -> ScoredArticle:
+def _make_scored_article(number: int, *, source: str, category: str = "procurement") -> ScoredArticle:
     return ScoredArticle(
         url=f"https://example.com/article-{number}",
         title=f"Article {number}",
         source=source,
         source_url="https://example.com/feed.xml",
-        category="procurement",
+        category=category,
         published_at="2026-04-04T08:00:00+00:00",
         summary=f"Summary {number}",
         relevance_score=8,
@@ -957,6 +1225,10 @@ def _make_fetch_summary(
         articles_deduplicated=len(articles),
         articles_saved=0,
     )
+
+
+async def _async_return(value):
+    return value
 
 
 def _has_openrouter_api_key() -> bool:

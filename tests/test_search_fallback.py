@@ -198,6 +198,95 @@ def test_search_fallback_articles_returns_allowlisted_article(monkeypatch) -> No
     assert articles[0].origin_source == "SAP Ariba"
     assert articles[0].discovery_method == "search_fallback"
     assert articles[0].summary == "Recovered summary"
+    assert articles[0].category == "mainstream"
+
+
+def test_search_fallback_articles_preserve_global_news_publisher_group(monkeypatch) -> None:
+    now = datetime(2026, 4, 5, 9, 0, tzinfo=timezone.utc)
+    monkeypatch.setenv("BRAVE_SEARCH_API_KEY", "brave-key")
+    monkeypatch.setattr(
+        "src.fetcher.search_fallback.load_effective_search_allowlist",
+        lambda: SearchFallbackAllowlist(
+            publishers={
+                "reuters.com": SearchFallbackPublisher(
+                    domain="reuters.com",
+                    label="Reuters",
+                    group="global_news",
+                    active=True,
+                )
+            },
+            deny_domains=set(),
+            auto_include_source_categories=(),
+        ),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "api.search.brave.com":
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {
+                            "url": "https://www.reuters.com/world/europe/example-story/",
+                            "title": "Recovered headline",
+                            "description": "Recovered summary",
+                        }
+                    ]
+                },
+            )
+        if request.url.host == "www.reuters.com" and request.url.path == "/robots.txt":
+            return httpx.Response(200, text="User-agent: *\nAllow: /\n")
+        if request.url.host == "www.reuters.com":
+            return httpx.Response(
+                200,
+                text=dedent(
+                    """
+                    <html>
+                      <head>
+                        <title>Recovered headline</title>
+                        <meta property="article:published_time" content="2026-04-04T07:00:00Z">
+                      </head>
+                    </html>
+                    """
+                ).strip(),
+            )
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    source = Source(
+        name="Macro Source",
+        url="https://example.com/macro-feed.xml",
+        tier=2,
+        method="rss",
+        active=True,
+        category="global_news",
+        fallback_search=SearchFallbackConfig(
+            configured=True,
+            enabled=True,
+            include_when_inactive=False,
+            query="macro query",
+            max_results=1,
+        ),
+    )
+    settings = _settings()
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    try:
+        articles = asyncio.run(
+            search_fallback_articles(
+                source,
+                client=client,
+                settings=settings,
+                rate_limiter=DomainRateLimiter(0),
+                robots_policy=RobotsPolicy(),
+                allow_robots_network_fallback=False,
+                now=now,
+            )
+        )
+    finally:
+        asyncio.run(client.aclose())
+
+    assert len(articles) == 1
+    assert articles[0].category == "global_news"
 
 
 def test_search_fallback_articles_skips_candidates_blocked_by_candidate_robots(
