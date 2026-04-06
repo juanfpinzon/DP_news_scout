@@ -201,7 +201,9 @@ def test_search_fallback_articles_returns_allowlisted_article(monkeypatch) -> No
     assert articles[0].category == "mainstream"
 
 
-def test_search_fallback_articles_preserve_global_news_publisher_group(monkeypatch) -> None:
+def test_search_fallback_articles_allow_global_news_publishers_for_procurement_sources(
+    monkeypatch,
+) -> None:
     now = datetime(2026, 4, 5, 9, 0, tzinfo=timezone.utc)
     monkeypatch.setenv("BRAVE_SEARCH_API_KEY", "brave-key")
     monkeypatch.setattr(
@@ -253,17 +255,18 @@ def test_search_fallback_articles_preserve_global_news_publisher_group(monkeypat
         raise AssertionError(f"Unexpected request: {request.url}")
 
     source = Source(
-        name="Macro Source",
-        url="https://example.com/macro-feed.xml",
+        name="SAP Ariba",
+        url="https://news.sap.com/tags/sap-ariba/",
         tier=2,
-        method="rss",
-        active=True,
-        category="global_news",
+        method="scrape",
+        active=False,
+        category="vendor",
+        selectors={"article": "article", "title": "h2", "link": "a[href]", "date": "time"},
         fallback_search=SearchFallbackConfig(
             configured=True,
             enabled=True,
-            include_when_inactive=False,
-            query="macro query",
+            include_when_inactive=True,
+            query="\"SAP Ariba\" procurement",
             max_results=1,
         ),
     )
@@ -286,6 +289,7 @@ def test_search_fallback_articles_preserve_global_news_publisher_group(monkeypat
         asyncio.run(client.aclose())
 
     assert len(articles) == 1
+    assert articles[0].origin_source == "SAP Ariba"
     assert articles[0].category == "global_news"
 
 
