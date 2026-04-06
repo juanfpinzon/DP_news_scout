@@ -2,7 +2,7 @@
 
 ## Project Summary
 
-DPNS is a daily automated email digest that currently monitors 16 configured procurement and digital transformation sources, uses Claude to score relevance and compose executive summaries, and delivers a curated briefing to Digital Procurement senior leaders at PepsiCo every weekday at 9:00 AM CET.
+DPNS is a daily automated email digest that currently monitors 20 active procurement, digital transformation, and global macro sources, plus 3 fallback-only sources, uses Claude to score relevance and compose executive summaries, and delivers a curated briefing to Digital Procurement senior leaders at PepsiCo every weekday at 9:00 AM CET.
 
 Full context lives in:
 - **[PRD.md](PRD.md)** — product requirements, content strategy, email design spec, success metrics
@@ -24,7 +24,7 @@ Fetcher → Analyzer → Renderer → Sender
 | Stage | Module | Responsibility |
 |-------|--------|----------------|
 | Fetcher | `src/fetcher/` | RSS + web scraping, dedup, SQLite persistence |
-| Analyzer | `src/analyzer/` | LLM relevance scoring + digest composition |
+| Analyzer | `src/analyzer/` | LLM relevance scoring + digest composition, including the parallel global macro briefing track |
 | Renderer | `src/renderer/` | HTML email (Jinja2 + premailer) + plain-text fallback |
 | Sender | `src/sender/` | AgentMail API delivery with retry logic |
 
@@ -67,12 +67,15 @@ dpns/
 ├── prompts/
 │   ├── context_preamble.md     # Shared LLM context about the team/org
 │   ├── relevance_scoring.md    # Rubric for 1–10 relevance scoring
-│   └── digest_composition.md   # Format/tone instructions for digest output
+│   ├── global_news_scoring.md  # Rubric for macro/geopolitical relevance scoring
+│   ├── digest_composition.md   # Format/tone instructions for digest output
+│   └── global_briefing_composition.md # Instructions for the macro briefing section
 ├── src/
 │   ├── main.py                 # Pipeline orchestrator
 │   ├── fetcher/                # RSS, scraping, dedup, registry
 │   │   ├── search_fallback.py  # Brave-backed fallback discovery + allowlist gate
 │   ├── analyzer/               # LLM client, relevance scoring, digest composition
+│   │   ├── global_briefing.py  # Macro briefing composition
 │   ├── renderer/               # HTML + plain-text email builders
 │   ├── sender/                 # AgentMail integration
 │   ├── storage/                # SQLite schema and helpers
@@ -82,6 +85,7 @@ dpns/
 ├── tests/
 │   ├── test_fetcher.py
 │   ├── test_analyzer.py
+│   ├── test_global_briefing.py
 │   ├── test_renderer.py
 │   └── test_pipeline.py
 ├── scripts/
@@ -97,7 +101,9 @@ dpns/
 ## Key Design Decisions
 
 ### LLM Usage
-- **Two-pass LLM pipeline**: first call scores relevance (batch of ~10 articles → JSON scores), second call composes the full digest (top ~15 articles → structured JSON output).
+- **Parallel LLM analysis tracks**:
+  - Main procurement track: score relevance (batch of ~10 articles → JSON scores), then compose the full digest (top ~15 articles → structured JSON output).
+  - Global macro track: score `global_news` articles with a separate rubric, then compose `Global Macro Briefing` items independently.
 - **Provider: OpenRouter** — all LLM calls go through OpenRouter using the `openai` SDK with `base_url="https://openrouter.ai/api/v1"`.
 - **Stage-specific defaults**:
   - relevance scoring: `anthropic/claude-haiku-4.5`
@@ -106,11 +112,14 @@ dpns/
 - Legacy `llm_model` / `LLM_MODEL` is still supported as a compatibility alias and will populate both stages if stage-specific settings are absent.
 - All prompts live in `/prompts/` as Markdown files — editable by non-developers without touching code.
 - System prompt always includes `context_preamble.md` which encodes PepsiCo Digital Procurement context.
+- Procurement articles use `relevance_scoring.md`; macro articles use `global_news_scoring.md`.
+- `Global Macro Briefing` composition uses `global_briefing_composition.md` and fails open so it never blocks the primary digest.
 
 ### Content Sources
 - Sources are tiered (Tier 1 = must-fetch, Tier 2 = supplemental, Tier 3 = conditional).
 - Source config in `config/sources.yaml` — adding/removing sources requires no code change (F-08).
-- Current validated active set: 16 sources total, with 6 RSS feeds, 9 direct scrape sources, and 1 fallback-only source.
+- Current validated active set: 20 active sources total, with 11 RSS feeds and 9 direct scrape sources, plus 3 fallback-only sources.
+- The active set now includes a dedicated `global_news` category used for the macro briefing track.
 - RSS-first strategy; web scraping only where RSS is unavailable.
 - Live fetch freshness window is currently 7 days.
 - Robots.txt respected; 1 req/sec per domain rate limit.
@@ -122,14 +131,15 @@ dpns/
 - Inactive sources can be reintroduced as fallback-only with `fallback_search.enabled: true` and `fallback_search.include_when_inactive: true`.
 - Search fallback only accepts publishers from `config/search_fallback_allowlist.yaml`, rejects denylisted/user-generated domains, and re-checks candidate-site robots before fetching article metadata.
 - Fallback articles persist `origin_source` and `discovery_method=search_fallback` while keeping the actual publisher as `source`.
+- Fallback publisher `group` values now map directly to article categories, including `global_news`, so trusted macro publishers can feed the macro briefing even when discovered from procurement sources.
 - Search fallback now emits a per-source summary in progress/log output, including counts such as Brave results returned, allowlist blocks, stale candidates, robots blocks, and candidate fetch failures.
 - Per-source `fallback_search.query` overrides are the main tuning lever for ambiguous brands; the current tuned set includes SAP Ariba, Archlet, Keelvar, SpendHQ, GEP, Zip, Sievo, Digital Procurement World, and Mars Newsroom.
-- `config/search_fallback_allowlist.yaml` remains operator-editable and now includes additional trusted trade-media seeds such as `globaltrademag.com`, `dcvelocity.com`, `thescxchange.com`, and `cpostrategy.media`.
+- `config/search_fallback_allowlist.yaml` remains operator-editable and now includes additional trusted trade-media seeds such as `globaltrademag.com`, `dcvelocity.com`, `thescxchange.com`, and `cpostrategy.media`, plus global macro publishers such as Reuters, BBC, CNN, DW, Al Jazeera, Bloomberg, and Financial Times.
 
 ### Email Design
 - Current desktop max width: 880px, table-based layout for Outlook compatibility.
 - Color palette: deep navy header/footer `#1a2332`, teal accent `#0891b2`, teal-green support `#2d8b8b`, with tinted section cards (`#f0f9fb`, `#f1faee`) and outer background `#cdd4db`.
-- Digest structure: Top Story → Key Developments → On Our Radar → Quick Hits → Footer.
+- Digest structure: Top Story → Key Developments → On Our Radar → Global Macro Briefing → Quick Hits → Footer.
 - CSS inlined via `premailer` for broad email client compatibility.
 
 ### Storage
@@ -143,6 +153,10 @@ dpns/
 
 - `max_digest_items: 15`
 - `max_digest_items_per_source: 3`
+- `relevance_threshold: 6`
+- `global_news_relevance_threshold: 5`
+- `global_news_max_items: 3`
+- `global_news_max_per_source: 2`
 - `llm_scoring_model: anthropic/claude-haiku-4.5`
 - `llm_digest_model: anthropic/claude-sonnet-4-6`
 - `llm_model_fallback: anthropic/claude-haiku-4.5`
@@ -189,6 +203,10 @@ LLM_MODEL_FALLBACK=anthropic/claude-haiku-4.5
 RSS_LOOKBACK_HOURS=168
 MAX_DIGEST_ITEMS=15
 MAX_DIGEST_ITEMS_PER_SOURCE=3
+RELEVANCE_THRESHOLD=6
+GLOBAL_NEWS_RELEVANCE_THRESHOLD=5
+GLOBAL_NEWS_MAX_ITEMS=3
+GLOBAL_NEWS_MAX_PER_SOURCE=2
 EMAIL_MAX_WIDTH_PX=880
 ISSUE_NUMBER_OVERRIDE=0
 SEARCH_FALLBACK_ENABLED=true

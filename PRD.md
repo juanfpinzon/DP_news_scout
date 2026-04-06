@@ -23,7 +23,7 @@ Digital Procurement senior leaders at PepsiCo need to stay current on procuremen
 - Team members surface articles ad-hoc in Slack/email — inconsistent, duplicated, incomplete
 
 **Desired outcome:**
-A daily, automated, executive-quality email briefing delivered at 9:00 AM (CET) that surfaces the most relevant procurement and digital transformation news, explains why each item matters to the team, and requires zero manual curation.
+A daily, automated, executive-quality email briefing delivered at 9:00 AM (CET) that surfaces the most relevant procurement and digital transformation news, adds a concise global macro snapshot for supply-chain and cost risk awareness, explains why each item matters to the team, and requires zero manual curation.
 
 ---
 
@@ -108,6 +108,19 @@ Sources are grouped into tiers. The system should attempt all Tier 1 sources dai
 | CIO Magazine | Mainstream | IT/digital transformation |
 | BCG (operations) | Consulting | Digital strategy |
 
+#### Global Macro Briefing Sources — Supplemental macro coverage
+| Source | Type | Focus |
+|--------|------|-------|
+| Reuters | Global news wire | Trade policy, geopolitics, commodities, logistics |
+| Al Jazeera | Global news | Geopolitics, trade disruption, sovereign risk |
+| DW | Global news | Europe, regulation, trade and energy |
+| BBC World | Global news | International developments affecting supply and logistics |
+| CNN World | Global news | Global disruption, sanctions, trade policy |
+| Bloomberg | Global business news | Commodities, inflation, markets, trade policy |
+| Financial Times | Global business news | Trade, regulation, macroeconomics, supply chain |
+
+> These sources are not scored on the normal procurement-tech rubric. They feed a separate macro relevance track intended to surface only 2–3 high-impact items with clear sourcing, cost, logistics, or compliance implications.
+
 ### 3.2 Content Filtering Criteria
 
 Articles must pass **at least one** relevance gate:
@@ -120,6 +133,17 @@ Articles must pass **at least one** relevance gate:
 7. **Competitive intelligence** — Peer CPG companies (Unilever, Mars, Mondelez, P&G, Kraft Heinz, and similar) publishing about their procurement digitization, sourcing strategies, supplier programs, or technology adoption
 
 Articles that are purely marketing fluff, product demos without substance, or unrelated to procurement should be filtered out.
+
+**Global macro relevance uses a separate track.** Those articles should be evaluated against a different set of gates focused on:
+- commodity markets,
+- trade policy and tariffs,
+- geopolitical disruption,
+- macroeconomic shifts,
+- regulatory and compliance developments,
+- logistics disruption,
+- sovereign risk.
+
+General world news without a clear procurement, cost, supply, or logistics implication should be filtered out of the macro section.
 
 ### 3.3 Editorial Voice & Format
 
@@ -137,8 +161,9 @@ The digest should read like a **trusted advisor's morning brief**, not a raw RSS
 2. **Top Story** (1 item) — the single most impactful piece for the team
 3. **Key Developments** (3–5 items) — important news grouped loosely by theme
 4. **On Our Radar** (2–4 items) — emerging trends, vendor moves, things to watch
-5. **Quick Hits** (3–5 items) — one-line summaries with links for anything notable but not deep
-6. **Footer** — disclaimer, feedback link, unsubscribe (if applicable)
+5. **Global Macro Briefing** (0–3 items) — high-impact macro or geopolitical developments framed for procurement, supply, and cost implications
+6. **Quick Hits** (3–5 items) — one-line summaries with links for anything notable but not deep
+7. **Footer** — disclaimer, feedback link, unsubscribe (if applicable)
 
 ---
 
@@ -169,6 +194,8 @@ The digest should read like a **trusted advisor's morning brief**, not a raw RSS
 | A-06 | Limit total digest to ~12–15 items max to respect reader time | P0 |
 | A-07 | Support model fallback within OpenRouter (e.g., swap to a cheaper/faster model) if the primary model is unavailable | P1 |
 | A-08 | Include a system prompt that encodes PepsiCo Digital Procurement context | P0 |
+| A-09 | Support a separate macro-news scoring rubric for trusted global-news sources so relevant macro items are not filtered out by the procurement-tech rubric | P0 |
+| A-10 | Compose an optional `Global Macro Briefing` section with 0–3 items and procurement-focused "why it matters" framing | P1 |
 
 ### 4.3 Email Composition (Renderer)
 
@@ -181,6 +208,7 @@ The digest should read like a **trusted advisor's morning brief**, not a raw RSS
 | E-05 | Include date, issue number, source count in header | P1 |
 | E-06 | Plain-text fallback for accessibility | P1 |
 | E-07 | Support a "feedback" link or reply-to for recipients | P2 |
+| E-08 | Render an optional `Global Macro Briefing` section between `On Our Radar` and `Quick Hits` when macro items are available | P1 |
 
 ### 4.4 Delivery (Sender)
 
@@ -247,6 +275,7 @@ Current v1 runtime note: the production scheduler posts an external trigger into
 ┌─────────────────────────────────────────────────────────┐
 │              2. DIGEST ENGINE                           │
 │  - OpenRouter API (`openai` SDK, custom base_url)       │
+│  - Parallel procurement + global macro scoring tracks   │
 │  - Relevance scoring + filtering                        │
 │  - Summary + "Why it matters" generation                │
 │  - Categorization + ranking                             │
@@ -297,7 +326,18 @@ The system prompt should encode:
 - Platforms/vendors **actively in use**: SAP / SAP Ariba, Archlet, Keelvar, Selectica, SpendhQ, Pirt, Tirzo — any news about these tools gets a +2 relevance bonus
 - Scoring rubric: 1–10 relevance with reasoning
 
-### 7.2 Digest Composition Prompt
+### 7.2 Global Macro Scoring Prompt
+
+A separate scoring prompt should evaluate trusted global-news articles for:
+- commodity and input-cost implications,
+- tariffs and trade policy,
+- geopolitical disruption,
+- inflation, currencies, and central-bank moves,
+- logistics and sovereign-risk implications for sourcing.
+
+This track should not rely on the procurement-tech rubric, because many important macro signals would otherwise score too low and be filtered out.
+
+### 7.3 Digest Composition Prompt
 
 After filtering, a second LLM call takes the top ~15 articles and:
 - Writes executive summaries
@@ -305,11 +345,21 @@ After filtering, a second LLM call takes the top ~15 articles and:
 - Assigns category (Top Story / Key Dev / Radar / Quick Hit)
 - Orders by impact
 
-### 7.3 Prompt Management
+### 7.4 Global Macro Briefing Composition Prompt
+
+After macro scoring, a dedicated composition call should:
+- select the strongest 0–3 macro items,
+- summarize them in the same editorial voice,
+- generate procurement-focused "Why it matters" framing,
+- avoid inventing a macro section when the signal is weak.
+
+### 7.5 Prompt Management
 
 Prompts should live in `/prompts/` as separate `.txt` or `.md` files:
 - `relevance_scoring.md`
+- `global_news_scoring.md`
 - `digest_composition.md`
+- `global_briefing_composition.md`
 - `context_preamble.md` (shared context about the team)
 
 This allows non-developers to refine the editorial voice without touching code.
@@ -325,6 +375,7 @@ This allows non-developers to refine the editorial voice without touching code.
 - **Top Story:** Highlighted with accent border (teal #0891b2) and tinted card background
 - **Section headers:** Bold, uppercase, subtle divider line
 - **Article cards:** Tinted backgrounds (`#f0f9fb`, `#f1faee`) with subtle borders and clear hierarchy
+- **Global Macro Briefing:** Distinct section accent (warm amber) so macro items read as adjacent but separate from procurement-tech coverage
 - **Links:** Teal (#0891b2), underlined on hover
 - **Footer:** Deep navy, smaller text, feedback link
 - **Responsive:** Single-column, 16px+ body text for mobile
@@ -354,6 +405,12 @@ This allows non-developers to refine the editorial voice without touching code.
 ║  ON OUR RADAR                            ║
 ║  ┌────────────────────────────────────┐  ║
 ║  │ Article 1...                       │  ║
+║  └────────────────────────────────────┘  ║
+║                                          ║
+║  GLOBAL MACRO BRIEFING                   ║
+║  ┌────────────────────────────────────┐  ║
+║  │ Macro item 1...                    │  ║
+║  │ Why it matters for supply/cost...  │  ║
 ║  └────────────────────────────────────┘  ║
 ║                                          ║
 ║  QUICK HITS                              ║

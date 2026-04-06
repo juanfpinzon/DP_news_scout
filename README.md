@@ -2,10 +2,10 @@
 
 Digital Procurement News Scout (DPNS) is a daily procurement and digital transformation digest that:
 
-- monitors 16 currently configured active sources (6 RSS, 9 scrape, 1 fallback-only),
+- monitors 20 currently configured active sources (11 RSS, 9 scrape), plus 3 fallback-only sources,
 - fetches articles from RSS, approved scrape sources, and Brave-backed search fallback,
-- scores relevance with a lower-cost Claude model via OpenRouter,
-- composes the executive briefing with Sonnet via OpenRouter,
+- scores procurement and macro relevance with Claude via OpenRouter,
+- composes both the main executive briefing and a separate global macro section with Sonnet via OpenRouter,
 - renders HTML and plain-text email output,
 - sends the digest through AgentMail.
 
@@ -59,6 +59,7 @@ The main pipeline is:
 Important current behavior:
 
 - The pipeline fetches live sources on every normal run.
+- The analyzer now runs two parallel tracks: the main procurement-tech digest and a separate `global_news` macro track that feeds the `Global Macro Briefing` section.
 - The live fetch window for RSS and scrape ingestion is currently 7 days.
 - Stored articles in SQLite are used for recent-URL dedup, not as an LLM cache.
 - Successful live runs persist article metadata back into SQLite.
@@ -73,6 +74,7 @@ Important current behavior:
 - Inactive sources can participate as fallback-only sources through `fallback_search.include_when_inactive: true`.
 - Search fallback accepts only allowlisted publisher domains from `config/search_fallback_allowlist.yaml`, rejects common low-trust/user-generated domains, and re-checks `robots.txt` on the candidate publisher before fetching the article page.
 - Fallback articles keep the actual publisher name as `source` and store `origin_source` plus `discovery_method=search_fallback` internally for audit/debugging.
+- Fallback publisher groups now determine the stored article category, so Reuters/BBC/CNN/Bloomberg/FT fallback hits can land in the macro track even when discovered from procurement sources.
 - Fetch progress now emits a per-source fallback summary such as `Brave returned 10 results; 8 blocked by allowlist; 2 stale.` so zero-result fallbacks are easier to diagnose from run logs alone.
 
 ## Configuration
@@ -84,6 +86,10 @@ Current notable settings:
 ```yaml
 max_digest_items: 15
 max_digest_items_per_source: 3
+relevance_threshold: 6
+global_news_relevance_threshold: 5
+global_news_max_items: 3
+global_news_max_per_source: 2
 llm_scoring_model: anthropic/claude-haiku-4.5
 llm_digest_model: anthropic/claude-sonnet-4-6
 llm_model_fallback: anthropic/claude-haiku-4.5
@@ -101,6 +107,10 @@ Meaning:
 
 - `max_digest_items`: total article slots passed into digest composition.
 - `max_digest_items_per_source`: soft per-source cap before the selector fills remaining slots.
+- `relevance_threshold`: cutoff for the main procurement scoring track.
+- `global_news_relevance_threshold`: cutoff for the macro scoring track.
+- `global_news_max_items`: maximum item count for the `Global Macro Briefing` section.
+- `global_news_max_per_source`: soft per-source cap for macro briefing selection.
 - `llm_scoring_model`: primary model used for batched relevance scoring.
 - `llm_digest_model`: primary model used for final digest composition.
 - `llm_model_fallback`: shared fallback model used by both analyzer stages on retry/fallback conditions.
@@ -126,6 +136,10 @@ DRY_RUN=false
 PIPELINE_TIMEOUT=600
 MAX_DIGEST_ITEMS=15
 MAX_DIGEST_ITEMS_PER_SOURCE=3
+RELEVANCE_THRESHOLD=6
+GLOBAL_NEWS_RELEVANCE_THRESHOLD=5
+GLOBAL_NEWS_MAX_ITEMS=3
+GLOBAL_NEWS_MAX_PER_SOURCE=2
 LLM_SCORING_MODEL=anthropic/claude-haiku-4.5
 LLM_DIGEST_MODEL=anthropic/claude-sonnet-4-6
 LLM_MODEL_FALLBACK=anthropic/claude-haiku-4.5
@@ -146,7 +160,8 @@ Search fallback is config-driven:
 - `config/sources.yaml` can add a `fallback_search` block per source with `enabled`, `include_when_inactive`, `query`, and `max_results`.
 - Active sources fall back automatically when the global switch is on unless a source explicitly sets `fallback_search.enabled: false`.
 - Inactive sources only run through search when `fallback_search.enabled: true` and `include_when_inactive: true`.
-- `config/search_fallback_allowlist.yaml` is the editable allowlist/denylist for accepted fallback publishers, with additional trusted trade-media seeds layered on top of the auto-included active DPNS `trade_media` and `mainstream` domains.
+- `config/search_fallback_allowlist.yaml` is the editable allowlist/denylist for accepted fallback publishers, with additional trusted publishers layered on top of the auto-included active DPNS `trade_media`, `mainstream`, and `global_news` domains.
+- Global-news publishers in that allowlist are shared with procurement-source fallback too; the publisher `group` controls the category assigned to the recovered article.
 
 Operator guidance:
 
@@ -162,6 +177,7 @@ Current notable example:
 
 - `SAP Ariba` remains uncrawlable directly because `news.sap.com` blocks generic crawlers, but it now runs as a fallback-only source using Brave plus the allowlist gate.
 - Recent trade-media allowlist additions include `globaltrademag.com`, `dcvelocity.com`, `thescxchange.com`, and `cpostrategy.media`.
+- Global macro fallback coverage now includes trusted publishers such as `Reuters`, `Al Jazeera`, `DW`, `BBC`, `CNN`, `Bloomberg`, and `Financial Times`.
 
 ## LLM Model Split
 
@@ -170,6 +186,13 @@ The analyzer is now intentionally split by task:
 - Relevance scoring uses `llm_scoring_model` and defaults to `anthropic/claude-haiku-4.5`.
 - Digest composition uses `llm_digest_model` and defaults to `anthropic/claude-sonnet-4-6`.
 - Both stages share `llm_model_fallback`.
+
+The digest also now has a dedicated macro track:
+
+- `global_news` sources are scored with `prompts/global_news_scoring.md`.
+- Procurement sources are still scored with `prompts/relevance_scoring.md`.
+- The macro section is composed independently into `Global Macro Briefing`.
+- If the macro track fails, the primary procurement digest still completes and sends.
 
 This is the default cost-optimization path:
 
