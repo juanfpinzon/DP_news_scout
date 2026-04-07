@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Iterable
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from src.analyzer.llm_client import LLMClient
 from src.fetcher.models import RawArticle
@@ -236,19 +237,20 @@ def _parse_scores_payload(response_text: str, batch: list[RawArticle]) -> dict[s
 
         if not isinstance(url, str) or not url.strip():
             raise RelevanceScoringError("Each score item must include a non-empty 'url'")
-        if url not in expected_url_set:
-            raise RelevanceScoringError(f"Unexpected article URL in score payload: {url}")
-        if url in parsed_scores:
-            raise RelevanceScoringError(f"Duplicate score returned for article URL: {url}")
-
-        normalized_score = _normalize_score(score, url)
-        if not isinstance(reasoning, str) or not reasoning.strip():
+        resolved_url = _resolve_score_url(url, expected_url_set)
+        if resolved_url in parsed_scores:
             raise RelevanceScoringError(
-                f"Missing reasoning for relevance score payload item: {url}"
+                f"Duplicate score returned for article URL: {resolved_url}"
             )
 
-        parsed_scores[url] = ScoreResult(
-            url=url,
+        normalized_score = _normalize_score(score, resolved_url)
+        if not isinstance(reasoning, str) or not reasoning.strip():
+            raise RelevanceScoringError(
+                f"Missing reasoning for relevance score payload item: {resolved_url}"
+            )
+
+        parsed_scores[resolved_url] = ScoreResult(
+            url=resolved_url,
             score=normalized_score,
             reasoning=reasoning.strip(),
         )
@@ -277,6 +279,97 @@ def _normalize_score(value: Any, url: str) -> int:
             f"Score must be between 1 and 10 for article URL {url}: {score!r}"
         )
     return score
+
+
+def _resolve_score_url(url: str, expected_urls: set[str]) -> str:
+    normalized_url = _sanitize_score_url(url)
+    if normalized_url in expected_urls:
+        return normalized_url
+
+    canonical_candidates = _find_canonical_score_url_matches(
+        normalized_url,
+        expected_urls,
+    )
+    if len(canonical_candidates) == 1:
+        return canonical_candidates[0]
+
+    truncated_candidates = _find_safe_truncated_score_url_matches(
+        normalized_url,
+        expected_urls,
+    )
+    if len(truncated_candidates) == 1:
+        return truncated_candidates[0]
+
+    raise RelevanceScoringError(f"Unexpected article URL in score payload: {url}")
+
+
+def _sanitize_score_url(url: str) -> str:
+    return url.strip().rstrip(".,);]")
+
+
+def _canonicalize_score_url(url: str) -> str:
+    parsed = urlsplit(url)
+    scheme = parsed.scheme.lower() or "https"
+    host = parsed.netloc.lower().removeprefix("www.")
+    path = parsed.path.rstrip("/") or "/"
+    query = urlencode(sorted(parse_qsl(parsed.query, keep_blank_values=True)))
+    return urlunsplit((scheme, host, path, query, ""))
+
+
+def _find_canonical_score_url_matches(url: str, expected_urls: set[str]) -> list[str]:
+    canonical_target = _canonicalize_score_url(url)
+    return sorted(
+        candidate
+        for candidate in expected_urls
+        if _canonicalize_score_url(candidate) == canonical_target
+    )
+
+
+def _find_safe_truncated_score_url_matches(
+    url: str,
+    expected_urls: set[str],
+) -> list[str]:
+    target_identity = _split_score_url_identity(url)
+    if target_identity is None:
+        return []
+
+    return sorted(
+        candidate
+        for candidate in expected_urls
+        if _is_safe_truncated_score_url_match(
+            url,
+            candidate,
+            target_identity=target_identity,
+        )
+    )
+
+
+def _is_safe_truncated_score_url_match(
+    url: str,
+    candidate: str,
+    *,
+    target_identity: tuple[str, str, str],
+) -> bool:
+    if len(url) >= len(candidate) or not candidate.startswith(url):
+        return False
+
+    candidate_identity = _split_score_url_identity(candidate)
+    if candidate_identity != target_identity:
+        return False
+
+    suffix = candidate[len(url) :]
+    return url.endswith(("?", "#")) or suffix[:1] in {"?", "#"}
+
+
+def _split_score_url_identity(url: str) -> tuple[str, str, str] | None:
+    parsed = urlsplit(url)
+    if not parsed.scheme or not parsed.netloc:
+        return None
+
+    scheme = parsed.scheme.lower() or "https"
+    host = parsed.netloc.lower().removeprefix("www.")
+    path = parsed.path.rstrip("/") or "/"
+    return scheme, host, path
 
 
 def _pluralize(count: int, singular: str, plural: str | None = None) -> str:

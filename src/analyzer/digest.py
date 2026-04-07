@@ -485,12 +485,12 @@ def _resolve_digest_url(
     if len(canonical_candidates) == 1:
         return canonical_candidates[0]
 
-    # Only repair uniquely truncated URLs. Never coerce a longer model URL
-    # down to a selected article, because that can silently relink content.
-    truncated_candidates = sorted(
-        candidate
-        for candidate in article_urls
-        if len(normalized_url) < len(candidate) and candidate.startswith(normalized_url)
+    # Only repair safe truncations where the path is identical and the model
+    # stopped before a query or fragment tail. Prefix-only slug matches can
+    # silently relink to a different article and must be rejected.
+    truncated_candidates = _find_safe_truncated_url_matches(
+        normalized_url,
+        article_urls,
     )
     if len(truncated_candidates) == 1:
         return truncated_candidates[0]
@@ -527,6 +527,53 @@ def _find_canonical_url_matches(url: str, article_urls: set[str]) -> list[str]:
         for candidate in article_urls
         if _canonicalize_digest_url(candidate) == canonical_target
     )
+
+
+def _find_safe_truncated_url_matches(
+    url: str,
+    article_urls: set[str],
+) -> list[str]:
+    target_identity = _split_digest_url_identity(url)
+    if target_identity is None:
+        return []
+
+    return sorted(
+        candidate
+        for candidate in article_urls
+        if _is_safe_truncated_url_match(
+            url,
+            candidate,
+            target_identity=target_identity,
+        )
+    )
+
+
+def _is_safe_truncated_url_match(
+    url: str,
+    candidate: str,
+    *,
+    target_identity: tuple[str, str, str],
+) -> bool:
+    if len(url) >= len(candidate) or not candidate.startswith(url):
+        return False
+
+    candidate_identity = _split_digest_url_identity(candidate)
+    if candidate_identity != target_identity:
+        return False
+
+    suffix = candidate[len(url) :]
+    return url.endswith(("?", "#")) or suffix[:1] in {"?", "#"}
+
+
+def _split_digest_url_identity(url: str) -> tuple[str, str, str] | None:
+    parsed = urlsplit(url)
+    if not parsed.scheme or not parsed.netloc:
+        return None
+
+    scheme = parsed.scheme.lower() or "https"
+    host = parsed.netloc.lower().removeprefix("www.")
+    path = parsed.path.rstrip("/") or "/"
+    return scheme, host, path
 
 
 def _find_brand_qualified_path_variant_matches(

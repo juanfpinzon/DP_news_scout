@@ -5,7 +5,13 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.analyzer.digest import Digest, DigestCompositionError, _select_articles, compose_digest
+from src.analyzer.digest import (
+    Digest,
+    DigestCompositionError,
+    _resolve_digest_url,
+    _select_articles,
+    compose_digest,
+)
 from src.analyzer.relevance import ScoredArticle
 from src.utils.config import Settings
 
@@ -455,7 +461,7 @@ def test_compose_digest_retries_after_invalid_json_response() -> None:
 
 def test_compose_digest_recovers_unique_truncated_article_url() -> None:
     article = build_article(1, 10)
-    article.url = "https://conference.dpw.ai/speakers/paul-polman-2"
+    article.url = "https://conference.dpw.ai/speakers/paul-polman-2?profile=full"
     article.source = "Digital Procurement World"
     other_article = build_article(2, 9)
     llm_client = FakeLLMClient(
@@ -474,7 +480,7 @@ def test_compose_digest_recovers_unique_truncated_article_url() -> None:
               "on_our_radar": [],
               "quick_hits": [
                 {
-                  "url": "https://conference",
+                  "url": "https://conference.dpw.ai/speakers/paul-polman-2",
                   "one_liner": "Quick takeaway.",
                   "source": "Digital Procurement World"
                 }
@@ -508,7 +514,16 @@ def test_compose_digest_recovers_unique_truncated_article_url() -> None:
 
     digest = asyncio.run(run())
 
-    assert digest.quick_hits[0].url == "https://conference.dpw.ai/speakers/paul-polman-2"
+    assert digest.quick_hits[0].url == "https://conference.dpw.ai/speakers/paul-polman-2?profile=full"
+
+
+def test_resolve_digest_url_rejects_prefix_collisions_for_truncated_urls() -> None:
+    with pytest.raises(DigestCompositionError, match="unknown article URL"):
+        _resolve_digest_url(
+            "https://example.com/article-1",
+            field_name="top_story.url",
+            article_urls={"https://example.com/article-10"},
+        )
 
 
 def test_compose_digest_recovers_brand_qualified_path_variant() -> None:
