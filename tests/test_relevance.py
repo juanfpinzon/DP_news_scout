@@ -6,6 +6,7 @@ from dataclasses import replace
 import pytest
 
 from src.analyzer.relevance import (
+    MAX_SCORING_ATTEMPTS,
     RelevanceScoringError,
     ScoredArticle,
     score_articles,
@@ -19,6 +20,12 @@ class DummyLogger:
         self.records: list[tuple[str, dict[str, object]]] = []
 
     def info(self, event: str, **kwargs) -> None:
+        self.records.append((event, kwargs))
+
+    def warning(self, event: str, **kwargs) -> None:
+        self.records.append((event, kwargs))
+
+    def error(self, event: str, **kwargs) -> None:
         self.records.append((event, kwargs))
 
 
@@ -142,17 +149,14 @@ def test_score_articles_batches_filters_and_parses_fenced_json() -> None:
 
 def test_score_articles_raises_on_missing_scores() -> None:
     articles = [build_article(1), build_article(2)]
-    llm_client = FakeLLMClient(
-        [
-            """
-            {
-              "scores": [
-                {"url": "https://example.com/article-1", "score": 8, "reasoning": "Relevant."}
-              ]
-            }
-            """
-        ]
-    )
+    invalid_response = """
+        {
+          "scores": [
+            {"url": "https://example.com/article-1", "score": 8, "reasoning": "Relevant."}
+          ]
+        }
+        """
+    llm_client = FakeLLMClient([invalid_response] * MAX_SCORING_ATTEMPTS)
 
     async def run() -> None:
         await score_articles(
@@ -202,17 +206,14 @@ def test_score_articles_rejects_prefix_collisions_for_truncated_urls() -> None:
         build_article(10),
         url="https://example.com/article-10",
     )
-    llm_client = FakeLLMClient(
-        [
-            """
-            {
-              "scores": [
-                {"url": "https://example.com/article-1", "score": 8, "reasoning": "Relevant."}
-              ]
-            }
-            """
-        ]
-    )
+    invalid_response = """
+        {
+          "scores": [
+            {"url": "https://example.com/article-1", "score": 8, "reasoning": "Relevant."}
+          ]
+        }
+        """
+    llm_client = FakeLLMClient([invalid_response] * MAX_SCORING_ATTEMPTS)
 
     async def run() -> None:
         await score_articles(
@@ -223,6 +224,59 @@ def test_score_articles_rejects_prefix_collisions_for_truncated_urls() -> None:
 
     with pytest.raises(RelevanceScoringError, match="Unexpected article URL"):
         asyncio.run(run())
+
+
+def test_score_articles_retries_invalid_unknown_url_payload() -> None:
+    article = replace(
+        build_article(1),
+        url="https://example.com/trump-threatens-iran-a-whole-civilisation-will-die",
+        title="Trump threatens Iran: A whole civilisation will die tonight",
+    )
+    llm_client = FakeLLMClient(
+        [
+            """
+            {
+              "scores": [
+                {
+                  "url": "https://example.com/trump-threatens-iran-a-whole-civilisation-will-die-tonight",
+                  "score": 8,
+                  "reasoning": "Relevant."
+                }
+              ]
+            }
+            """,
+            """
+            {
+              "scores": [
+                {
+                  "url": "https://example.com/trump-threatens-iran-a-whole-civilisation-will-die",
+                  "score": 8,
+                  "reasoning": "Relevant."
+                }
+              ]
+            }
+            """,
+        ]
+    )
+    logger = DummyLogger()
+
+    async def run() -> list[ScoredArticle]:
+        return await score_articles(
+            [article],
+            llm_client=llm_client,
+            settings=build_settings(),
+            logger=logger,
+        )
+
+    scored_articles = asyncio.run(run())
+
+    assert [article.url for article in scored_articles] == [
+        "https://example.com/trump-threatens-iran-a-whole-civilisation-will-die"
+    ]
+    assert len(llm_client.calls) == 2
+    assert "Malformed output to repair" in str(llm_client.calls[1]["user_prompt"])
+    assert "Allowed articles" in str(llm_client.calls[1]["user_prompt"])
+    assert any(event == "relevance_batch_retrying_invalid_payload" for event, _payload in logger.records)
 
 
 def test_scored_article_to_record_sets_relevance_score() -> None:

@@ -17,6 +17,7 @@ from src.utils.progress import emit_progress
 
 DEFAULT_BATCH_SIZE = 10
 DEFAULT_MAX_TOKENS = 1600
+MAX_SCORING_ATTEMPTS = 3
 PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 
 
@@ -97,12 +98,41 @@ async def score_articles(
         for batch_index, batch in enumerate(_chunked(articles, batch_size), start=1):
             user_prompt = _build_user_prompt(batch, now=now)
             try:
-                response_text = await active_client.complete(
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                    max_tokens=max_tokens,
-                )
-                score_map = _parse_scores_payload(response_text, batch)
+                prompt_to_send = user_prompt
+                for attempt in range(1, MAX_SCORING_ATTEMPTS + 1):
+                    response_text = await active_client.complete(
+                        system_prompt=system_prompt,
+                        user_prompt=prompt_to_send,
+                        max_tokens=max_tokens,
+                    )
+                    try:
+                        score_map = _parse_scores_payload(response_text, batch)
+                        break
+                    except RelevanceScoringError as exc:
+                        if attempt >= MAX_SCORING_ATTEMPTS:
+                            raise
+
+                        logger.warning(
+                            "relevance_batch_retrying_invalid_payload",
+                            batch_index=batch_index,
+                            total_batches=total_batches,
+                            attempt=attempt,
+                            max_attempts=MAX_SCORING_ATTEMPTS,
+                            batch_articles=len(batch),
+                            article_urls=[article.url for article in batch],
+                            error=str(exc),
+                        )
+                        emit_progress(
+                            progress_callback,
+                            "Relevance batch "
+                            f"{batch_index}/{total_batches} returned invalid output; "
+                            f"retrying ({attempt + 1}/{MAX_SCORING_ATTEMPTS}).",
+                        )
+                        prompt_to_send = _build_score_repair_prompt(
+                            batch=batch,
+                            invalid_response=response_text,
+                            error=str(exc),
+                        )
             except Exception as exc:
                 logger.error(
                     "relevance_batch_failed",
@@ -322,6 +352,48 @@ def _find_canonical_score_url_matches(url: str, expected_urls: set[str]) -> list
         candidate
         for candidate in expected_urls
         if _canonicalize_score_url(candidate) == canonical_target
+    )
+
+
+def _build_score_repair_prompt(
+    *,
+    batch: list[RawArticle],
+    invalid_response: str,
+    error: str,
+) -> str:
+    allowed_articles = [
+        {
+            "url": article.url,
+            "title": article.title,
+            "source": article.source,
+            "published_at": article.published_at or "",
+        }
+        for article in batch
+    ]
+    required_shape = {
+        "scores": [
+            {
+                "url": "https://example.com/article-1",
+                "score": 8,
+                "reasoning": "One sentence explaining the score.",
+            }
+        ]
+    }
+    return (
+        "Repair the malformed relevance scoring output below.\n"
+        "Return exactly one valid JSON object and nothing else.\n"
+        "Use only the allowed article URLs listed below.\n"
+        "Return one score item for every allowed article URL, and each URL must appear exactly once.\n"
+        "Scores must be integers between 1 and 10.\n"
+        "Each `reasoning` value must be a non-empty string.\n\n"
+        "Validation error:\n"
+        f"{error}\n\n"
+        "Required JSON shape:\n"
+        f"{json.dumps(required_shape, ensure_ascii=True, indent=2)}\n\n"
+        "Allowed articles:\n"
+        f"{json.dumps(allowed_articles, ensure_ascii=True, indent=2)}\n\n"
+        "Malformed output to repair:\n"
+        f"{invalid_response.strip()}\n"
     )
 
 
