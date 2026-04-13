@@ -43,7 +43,10 @@ def test_load_config_reads_defaults() -> None:
     assert config.env.email_from == "news-scout@example.com"
     assert config.default_recipient_group == "test"
     assert set(config.recipient_groups) == {"leadership", "extended", "test"}
-    assert [recipient.email for recipient in config.recipients] == ["juancho704@gmail.com"]
+    assert [recipient.email for recipient in config.recipients] == [
+        "juancho704@gmail.com",
+        "juanfernando.pinzon@pepsico.com",
+    ]
 
 
 def test_load_config_allows_env_override(monkeypatch: pytest.MonkeyPatch) -> None:

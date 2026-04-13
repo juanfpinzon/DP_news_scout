@@ -258,6 +258,17 @@ sources:
     selectors: *resource_scrape
     # DEACTIVATED: 403 — Cloudflare. Needs Playwright.
 
+  - name: Zero100
+    url: "https://zero100.com/content-hub/"
+    tier: 2
+    method: "scrape"
+    active: false
+    category: "analyst"
+    selectors: *generic_scrape
+    # DEACTIVATED: Membership-only intelligence platform. No public RSS feed.
+    # Hard paywall + JS bot verification blocks automated access.
+    # Primarily podcast-based content. Revisit only if Zero100 offers a public feed.
+
   # --- Community ---
 
   - name: Digital Procurement World
@@ -460,8 +471,11 @@ sources:
 # initial fetcher hardening pass:
 # - Selectica / Determine
 # - Pirt
-# - Tirzo
 # - Forbes procurement / supply chain landing page
+#
+# Evaluated and found permanently gated (no automation path):
+# - Zero100 (membership-only, no public RSS, bot protection)
+# - Procurement Leaders (paid membership)
 
 # Sources requiring Playwright (v2 enhancement) to activate:
 # - Gartner, BCG, Kearney (403 + bot protection)
@@ -471,4 +485,3 @@ sources:
 # - Procurious (SPA + partial paywall)
 # - Unilever, Kraft Heinz (403 bot protection)
 # - Mondelez, P&G (JS-rendered SPAs)
-# - Procurement Leaders (paid membership — may never be scrapable)
