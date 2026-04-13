@@ -50,11 +50,18 @@ Entry point: `python -m src.main`
 
 ```
 dpns/
+├── AGENTS.md                   # Canonical implementation reference (read for deep dives)
 ├── CLAUDE.md                   # This file
+├── DESIGN.md                   # Visual / UX design decisions
 ├── PRD.md                      # Product requirements
 ├── PLAN.md                     # Implementation plan
+├── PLAN_SearchFallback.md      # Search-fallback feature plan
+├── PLAN_GLOBAL_MACRO_BRIEFING.md # Global macro briefing feature plan
+├── README.md
 ├── pyproject.toml
 ├── .env.example
+├── data/
+│   └── dpns.db                 # SQLite runtime DB (gitignored)
 ├── config/
 │   ├── sources.yaml            # Source registry (URL, tier, method, selectors)
 │   ├── search_fallback_allowlist.yaml # Trusted publisher allowlist for Brave fallback
@@ -63,7 +70,9 @@ dpns/
 ├── prompts/
 │   ├── context_preamble.md     # Shared LLM context about the team/org
 │   ├── relevance_scoring.md    # Rubric for 1–10 relevance scoring
-│   └── digest_composition.md   # Format/tone instructions for digest output
+│   ├── digest_composition.md   # Format/tone instructions for digest output
+│   ├── global_news_scoring.md  # Scoring rubric for global macro briefing
+│   └── global_briefing_composition.md  # Format/tone for global briefing
 ├── src/
 │   ├── main.py                 # Pipeline orchestrator
 │   ├── fetcher/                # RSS, scraping, dedup, registry
@@ -76,10 +85,12 @@ dpns/
 ├── templates/
 │   └── digest_email.html       # Jinja2 email template (compiled output)
 ├── tests/
-│   ├── test_fetcher.py
-│   ├── test_analyzer.py
-│   ├── test_renderer.py
-│   └── test_pipeline.py
+│   ├── conftest.py
+│   ├── test_fetcher.py / test_analyzer.py / test_renderer.py / test_pipeline.py
+│   ├── test_relevance.py / test_digest.py / test_global_briefing.py
+│   ├── test_search_fallback.py / test_seed_sources.py
+│   ├── test_config.py / test_db.py / test_prompts.py
+│   └── test_main.py / test_run_manual.py / test_sender.py / test_test_email.py
 ├── scripts/
 │   ├── run_manual.py           # CLI manual trigger (--dry-run, --preview, etc.)
 │   ├── test_email.py           # Send a test email with mock data
@@ -104,23 +115,12 @@ dpns/
 - System prompt always includes `context_preamble.md` which encodes PepsiCo Digital Procurement context.
 
 ### Content Sources
-- Sources are tiered (Tier 1 = must-fetch, Tier 2 = supplemental, Tier 3 = conditional).
-- Source config in `config/sources.yaml` — adding/removing sources requires no code change (F-08).
-- Current validated active set: 16 sources total, with 6 RSS feeds, 9 direct scrape sources, and 1 fallback-only source.
-- RSS-first strategy; web scraping only where RSS is unavailable.
-- Live fetch freshness window is currently 7 days.
-- Robots.txt respected; 1 req/sec per domain rate limit.
-- `robots.txt` is checked before RSS and scrape fetches.
-- If the DPNS-managed HTTP client gets `401/403` on `robots.txt`, the fetcher may do one fallback retry for the robots file only.
-- If that retry fails, the policy remains deny-by-default unless `robots.txt` is confirmed missing (`404/410`).
-- Caller-supplied `httpx.AsyncClient` instances are not bypassed during robots evaluation.
-- With `search_fallback_enabled: true`, active sources automatically try Brave search fallback after a direct failure or a direct fetch that returns `0` recent articles.
-- Inactive sources can be reintroduced as fallback-only with `fallback_search.enabled: true` and `fallback_search.include_when_inactive: true`.
-- Search fallback only accepts publishers from `config/search_fallback_allowlist.yaml`, rejects denylisted/user-generated domains, and re-checks candidate-site robots before fetching article metadata.
-- Fallback articles persist `origin_source` and `discovery_method=search_fallback` while keeping the actual publisher as `source`.
-- Search fallback now emits a per-source summary in progress/log output, including counts such as Brave results returned, allowlist blocks, stale candidates, robots blocks, and candidate fetch failures.
-- Per-source `fallback_search.query` overrides are the main tuning lever for ambiguous brands; the current tuned set includes SAP Ariba, Archlet, Keelvar, SpendHQ, GEP, Zip, Sievo, Digital Procurement World, and Mars Newsroom.
-- `config/search_fallback_allowlist.yaml` remains operator-editable and now includes additional trusted trade-media seeds such as `globaltrademag.com`, `dcvelocity.com`, `thescxchange.com`, and `cpostrategy.media`.
+- Sources are tiered (Tier 1 = must-fetch, Tier 2 = supplemental, Tier 3 = conditional). Adding/removing sources requires no code change — edit `config/sources.yaml` only (F-08).
+- RSS-first strategy; web scraping only where RSS is unavailable. Live freshness window: 7 days.
+- `robots.txt` is deny-by-default: the fetcher checks it before every RSS/scrape fetch and will not proceed unless the file is confirmed missing (`404/410`) or permits access.
+- Search fallback (`SEARCH_FALLBACK_ENABLED=true`) activates after a direct fetch fails or returns 0 recent articles. Only publishers in `config/search_fallback_allowlist.yaml` are accepted — edit this file to add trusted trade-media domains.
+
+> For full details on fallback retry logic, per-source query tuning, and robots.txt edge cases, see `AGENTS.md`.
 
 ### Email Design
 - Current desktop max width: 880px, table-based layout for Outlook compatibility.
@@ -160,12 +160,18 @@ SEARCH_FALLBACK_ENABLED=true
 SEARCH_FALLBACK_PROVIDER=brave
 SEARCH_FALLBACK_TIMEOUT_SECONDS=15
 SEARCH_FALLBACK_MAX_RESULTS_PER_SOURCE=3
-BRAVE_SEARCH_API_KEY=...
+BRAVE_SEARCH_API_KEY=...   # Required when SEARCH_FALLBACK_ENABLED=true (the default)
 ```
 
 ---
 
 ## Development Workflow
+
+### Initial setup
+```bash
+pip install -e ".[dev]"
+cp .env.example .env   # then fill in required keys (see Environment Variables above)
+```
 
 ### Running the pipeline locally
 ```bash
