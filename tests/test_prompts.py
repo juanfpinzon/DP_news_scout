@@ -22,7 +22,7 @@ def test_context_preamble_includes_procurement_scope_and_priority_signals() -> N
         "Selectica",
         "SpendhQ",
         "Pirt",
-        "Tirzo",
+        "Terzo",
     ]:
         assert platform in prompt
 

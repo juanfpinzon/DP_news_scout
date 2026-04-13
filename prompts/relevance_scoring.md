@@ -7,7 +7,7 @@ Your job is to assign a relevance score from 1 to 10 to every article provided.
 Use the Digital Procurement context already supplied in the system prompt. Apply
 that context rigorously, especially:
 
-- News about SAP / SAP Ariba, Archlet, Keelvar, Selectica, SpendhQ, Pirt, or Tirzo
+- News about SAP / SAP Ariba, Archlet, Keelvar, Selectica, SpendhQ, Pirt, or Terzo
   should receive a +2 relevance bonus because those platforms are already in use.
 - Peer CPG news is relevant only when it is clearly about procurement,
   sourcing, supplier programs, supply chain technology, AI adoption, or digital

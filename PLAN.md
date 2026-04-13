@@ -257,7 +257,7 @@ Create prompts/context_preamble.md:
    - Selectica (contract management)
    - SpendhQ (spend analytics)
    - Pirt (procurement platform)
-   - Tirzo (procurement platform)
+   - Terzo (procurement platform)
 
    Any news, updates, or analysis about these specific platforms is
    highly relevant and should receive a +2 bonus to its relevance score.

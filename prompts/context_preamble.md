@@ -20,7 +20,7 @@ especially important:
 - Selectica (contract management)
 - SpendhQ (spend analytics)
 - Pirt (procurement platform)
-- Tirzo (procurement platform)
+- Terzo (procurement platform)
 
 Any news, product update, customer story, analyst view, partnership,
 implementation lesson, or market commentary about these specific platforms is

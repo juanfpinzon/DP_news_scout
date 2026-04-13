@@ -66,7 +66,7 @@ Sources are grouped into tiers. The system should attempt all Tier 1 sources dai
 | Selectica / Determine (blog/news) | Vendor ★ | Contract management — **actively used** |
 | SpendhQ (blog/news) | Vendor ★ | Spend analytics — **actively used** |
 | Pirt (blog/news) | Vendor ★ | Procurement platform — **actively used** |
-| Tirzo (blog/news) | Vendor ★ | Procurement platform — **actively used** |
+| Terzo (blog/news) | Vendor ★ | Procurement platform — **actively used** |
 | Coupa (blog/news) | Vendor | Platform updates, benchmarks |
 | Ivalua (blog/news) | Vendor | Platform updates |
 | Jaggaer (blog/news) | Vendor | Platform updates |
@@ -323,7 +323,7 @@ Current v1 runtime note: the production scheduler posts an external trigger into
 The system prompt should encode:
 - Who the readers are (Digital Procurement leaders at a major CPG company)
 - What transformation they're executing (full S2P/P2P digital transformation)
-- Platforms/vendors **actively in use**: SAP / SAP Ariba, Archlet, Keelvar, Selectica, SpendhQ, Pirt, Tirzo — any news about these tools gets a +2 relevance bonus
+- Platforms/vendors **actively in use**: SAP / SAP Ariba, Archlet, Keelvar, Selectica, SpendhQ, Pirt, Terzo — any news about these tools gets a +2 relevance bonus
 - Scoring rubric: 1–10 relevance with reasoning
 
 ### 7.2 Global Macro Scoring Prompt
@@ -468,7 +468,7 @@ This allows non-developers to refine the editorial voice without touching code.
 |---|----------|----------|
 | 1 | **Sender identity** | AgentMail inbox. `AGENTMAIL_INBOX_ID` is provided by the user at setup time — the setup process must prompt for it. |
 | 2 | **Internal vs. external hosting** | Fully external: cron-job.org (scheduler) + GitHub Actions (runner) + OpenRouter (LLM) + AgentMail (email). No PepsiCo infra required. |
-| 3 | **Platforms in use** | SAP / SAP Ariba, Archlet, Keelvar, Selectica, SpendhQ, Pirt, Tirzo. Used to tailor the relevance scoring prompt and "Why it matters" context. |
+| 3 | **Platforms in use** | SAP / SAP Ariba, Archlet, Keelvar, Selectica, SpendhQ, Pirt, Terzo. Used to tailor the relevance scoring prompt and "Why it matters" context. |
 | 4 | **Recipient management** | Admin-managed config file (`config/recipients.yaml`) for v1. Self-serve subscribe/unsubscribe is a v2 enhancement. |
 | 5 | **Content approval** | No human review gate for v1. Revisit after PoC — manual spot-checks during the dry-run week (Task 7.1.1) will inform whether a review step is needed. |
 | 6 | **API keys** | Juan Pinzon provisions OpenRouter and AgentMail keys for development and PoC testing. Production key management and spend limits to be decided with Tatjana. |
