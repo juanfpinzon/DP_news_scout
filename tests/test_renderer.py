@@ -147,15 +147,29 @@ class TestRenderDigest:
         assert "https://example.com/article-1" in html
         assert "Source 1" in html
 
-    def test_heading_labels_use_gt_pressura_font_family(self) -> None:
+    def test_email_typography_uses_outlook_safe_font_stacks(self) -> None:
         html = render_digest(_make_full_digest(), issue_number=1, date="April 4, 2026")
-        heading_font = "GT Pressura LCG Black"
+        headline_tokens = ("font-family:Georgia", "Times New Roman", "serif")
+        ui_tokens = ("Helvetica Neue", "Arial", "sans-serif")
 
-        masthead_end = html.index("6 sources")
-        masthead_region = html[max(0, masthead_end - 700):masthead_end]
-        assert heading_font in masthead_region
+        masthead_index = html.index("News")
+        masthead_region = html[max(0, masthead_index - 260):masthead_index + 140]
+        for token in headline_tokens:
+            assert token in masthead_region
+        assert "font-weight:bold" in masthead_region
         assert "News" in masthead_region
         assert "Scout" in masthead_region
+
+        for headline in (
+            "Headline 1",
+            "Headline 2",
+            "Headline 4",
+        ):
+            headline_index = html.rfind(headline)
+            assert headline_index >= 0
+            region = html[max(0, headline_index - 260): headline_index + 80]
+            for token in headline_tokens:
+                assert token in region
 
         for label in (
             "TOP STORY",
@@ -168,7 +182,10 @@ class TestRenderDigest:
             label_index = html.rfind(label)
             assert label_index >= 0
             region = html[max(0, label_index - 260): label_index + 80]
-            assert heading_font in region
+            for token in ui_tokens:
+                assert token in region
+
+        assert "GT Pressura LCG Black" not in html
 
     def test_key_developments_rendered(self) -> None:
         html = render_digest(_make_full_digest(), issue_number=1, date="April 4, 2026")
