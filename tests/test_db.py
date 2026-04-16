@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime
 
 from src.storage.db import (
     ArticleRecord,
@@ -81,3 +82,35 @@ def test_initialize_database_creates_file(tmp_path) -> None:
     initialize_database(str(database_path))
 
     assert database_path.exists()
+
+
+def test_get_recent_urls_can_use_injected_now(tmp_path) -> None:
+    database_path = str(tmp_path / "dpns.db")
+    save_articles(
+        database_path,
+        [
+            ArticleRecord(
+                url="https://example.com/historical-story",
+                title="Historical Story",
+                source="Example",
+                fetched_at="2026-03-31T09:00:00+00:00",
+            ),
+            ArticleRecord(
+                url="https://example.com/future-story",
+                title="Future Story",
+                source="Example",
+                fetched_at="2026-04-10T09:00:00+00:00",
+            ),
+        ],
+    )
+
+    assert get_recent_urls(
+        database_path,
+        days=7,
+        now=datetime.fromisoformat("2026-04-04T09:00:00+00:00"),
+    ) == {"https://example.com/historical-story"}
+    assert get_recent_urls(
+        database_path,
+        days=7,
+        now=datetime.fromisoformat("2026-04-17T09:00:00+00:00"),
+    ) == {"https://example.com/future-story"}

@@ -131,13 +131,25 @@ def save_articles(database_path: str, articles: list[ArticleRecord | dict[str, A
     return len(normalized_articles)
 
 
-def get_recent_urls(database_path: str, days: int = 2) -> set[str]:
+def get_recent_urls(
+    database_path: str,
+    days: int = 2,
+    *,
+    now: datetime | None = None,
+) -> set[str]:
     initialize_database(database_path)
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    reference_time = now or datetime.now(timezone.utc)
+    cutoff = (reference_time - timedelta(days=days)).isoformat()
+    ceiling = reference_time.isoformat()
     with _connect_database(database_path) as connection:
         rows = connection.execute(
-            "SELECT url FROM articles WHERE COALESCE(fetched_at, published_at, '') >= ?",
-            (cutoff,),
+            """
+            SELECT url
+            FROM articles
+            WHERE COALESCE(fetched_at, published_at, '') >= ?
+              AND COALESCE(fetched_at, published_at, '') <= ?
+            """,
+            (cutoff, ceiling),
         ).fetchall()
     return {row[0] for row in rows}
 

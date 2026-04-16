@@ -64,9 +64,9 @@ async def score_articles(
         return []
 
     app_config: AppConfig | None = None
-    if settings is None or llm_client is None:
+    if settings is None:
         app_config = load_config()
-        settings = settings or app_config.settings
+        settings = app_config.settings
 
     assert settings is not None
     threshold = threshold if threshold is not None else settings.relevance_threshold
@@ -78,11 +78,13 @@ async def score_articles(
 
     owns_client = llm_client is None
     if llm_client is None:
-        active_client = LLMClient(
-            app_config=app_config,
-            settings=settings,
-            primary_model=settings.llm_scoring_model,
-        )
+        client_kwargs: dict[str, Any] = {
+            "settings": settings,
+            "primary_model": settings.llm_scoring_model,
+        }
+        if app_config is not None:
+            client_kwargs["app_config"] = app_config
+        active_client = LLMClient(**client_kwargs)
     else:
         with_primary_model = getattr(llm_client, "with_primary_model", None)
         active_client = (

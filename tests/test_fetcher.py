@@ -481,6 +481,178 @@ def test_robots_policy_falls_back_when_httpx_is_forbidden(monkeypatch) -> None:
         asyncio.run(client.aclose())
 
 
+def test_robots_policy_allows_when_robots_is_missing() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404, text="missing")
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    policy = RobotsPolicy()
+
+    try:
+        assert asyncio.run(
+            policy.allows(
+                client=client,
+                url="https://example.com/feed.xml",
+                user_agent="Mozilla/5.0",
+            )
+        )
+    finally:
+        asyncio.run(client.aclose())
+
+
+def test_robots_policy_denies_when_robots_status_is_unknown() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(503, text="upstream unavailable")
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    policy = RobotsPolicy()
+
+    try:
+        assert not asyncio.run(
+            policy.allows(
+                client=client,
+                url="https://example.com/feed.xml",
+                user_agent="Mozilla/5.0",
+            )
+        )
+    finally:
+        asyncio.run(client.aclose())
+
+
+def test_robots_policy_denies_when_robots_redirect_is_not_followed() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(302, headers={"Location": "/robots-live.txt"})
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    policy = RobotsPolicy()
+
+    try:
+        assert not asyncio.run(
+            policy.allows(
+                client=client,
+                url="https://example.com/feed.xml",
+                user_agent="Mozilla/5.0",
+            )
+        )
+    finally:
+        asyncio.run(client.aclose())
+
+
+def test_robots_policy_denies_when_robots_fetch_errors() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            raise httpx.ReadTimeout("timed out", request=request)
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    policy = RobotsPolicy()
+
+    try:
+        assert not asyncio.run(
+            policy.allows(
+                client=client,
+                url="https://example.com/feed.xml",
+                user_agent="Mozilla/5.0",
+            )
+        )
+    finally:
+        asyncio.run(client.aclose())
+
+
+def test_robots_policy_refreshes_expired_cache_entry(monkeypatch) -> None:
+    robots_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal robots_calls
+        if request.url.path == "/robots.txt":
+            robots_calls += 1
+            if robots_calls == 1:
+                return httpx.Response(200, text="User-agent: *\nAllow: /\n")
+            return httpx.Response(200, text="User-agent: *\nDisallow: /\n")
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    monotonic_values = iter([0.0, 6.0])
+    last_monotonic = 6.0
+
+    def fake_monotonic() -> float:
+        nonlocal last_monotonic
+        try:
+            last_monotonic = next(monotonic_values)
+        except StopIteration:
+            pass
+        return last_monotonic
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(fetcher_common, "monotonic", fake_monotonic)
+    policy = RobotsPolicy(cache_ttl_seconds=5)
+
+    try:
+        assert asyncio.run(
+            policy.allows(
+                client=client,
+                url="https://example.com/feed.xml",
+                user_agent="Mozilla/5.0",
+            )
+        )
+        assert not asyncio.run(
+            policy.allows(
+                client=client,
+                url="https://example.com/feed.xml",
+                user_agent="Mozilla/5.0",
+            )
+        )
+    finally:
+        asyncio.run(client.aclose())
+
+    assert robots_calls == 2
+
+
+def test_robots_policy_evicts_oldest_cache_entry_when_capacity_is_exceeded() -> None:
+    robots_hosts: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            robots_hosts.append(request.url.host or "")
+            return httpx.Response(200, text="User-agent: *\nAllow: /\n")
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    policy = RobotsPolicy(max_cache_entries=1)
+
+    try:
+        assert asyncio.run(
+            policy.allows(
+                client=client,
+                url="https://example.com/feed.xml",
+                user_agent="Mozilla/5.0",
+            )
+        )
+        assert asyncio.run(
+            policy.allows(
+                client=client,
+                url="https://example.org/feed.xml",
+                user_agent="Mozilla/5.0",
+            )
+        )
+        assert asyncio.run(
+            policy.allows(
+                client=client,
+                url="https://example.com/another-feed.xml",
+                user_agent="Mozilla/5.0",
+            )
+        )
+    finally:
+        asyncio.run(client.aclose())
+
+    assert robots_hosts == ["example.com", "example.org", "example.com"]
+
+
 def test_robots_policy_keeps_conservative_block_when_fallback_is_forbidden(monkeypatch) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/robots.txt":
@@ -1088,7 +1260,7 @@ def test_fetch_all_sources_deduplicates_and_saves_articles(tmp_path) -> None:
         "https://example.com/shared-story",
         "https://example.com/unique-story",
     ]
-    assert get_recent_urls(database_path, days=7) == {
+    assert get_recent_urls(database_path, days=7, now=now) == {
         "https://example.com/shared-story",
         "https://example.com/unique-story",
     }
@@ -1151,7 +1323,9 @@ def test_fetch_all_sources_loads_registry_when_sources_not_provided(tmp_path, mo
         asyncio.run(client.aclose())
 
     assert [article.url for article in articles] == ["https://example.com/registry-story"]
-    assert get_recent_urls(database_path, days=7) == {"https://example.com/registry-story"}
+    assert get_recent_urls(database_path, days=7, now=now) == {
+        "https://example.com/registry-story"
+    }
 
 
 def test_fetch_all_sources_continues_when_one_source_fails(tmp_path) -> None:
