@@ -370,7 +370,7 @@ This allows non-developers to refine the editorial voice without touching code.
 
 ### Visual Requirements
 - **Max width:** 880px
-- **Font:** `GT Pressura LCG Black` for headings with serif fallbacks; `Helvetica Neue` / Helvetica / Arial for body copy
+- **Font:** `Georgia` / Times New Roman for masthead and story headlines; `Helvetica Neue` / Helvetica / Arial for labels, metadata, and body copy
 - **Header:** Deep navy (#1a2332) with date, issue number, and brand masthead
 - **Top Story:** Highlighted with accent border (teal #0891b2) and tinted card background
 - **Section headers:** Bold, uppercase, subtle divider line
