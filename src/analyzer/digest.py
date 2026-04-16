@@ -70,9 +70,9 @@ async def compose_digest(
         raise ValueError("max_tokens must be greater than 0")
 
     app_config: AppConfig | None = None
-    if settings is None or llm_client is None:
+    if settings is None:
         app_config = load_config()
-        settings = settings or app_config.settings
+        settings = app_config.settings
 
     assert settings is not None
     selected_limit = max_articles if max_articles is not None else settings.max_digest_items
@@ -93,11 +93,13 @@ async def compose_digest(
 
     owns_client = llm_client is None
     if llm_client is None:
-        active_client = LLMClient(
-            app_config=app_config,
-            settings=settings,
-            primary_model=settings.llm_digest_model,
-        )
+        client_kwargs: dict[str, Any] = {
+            "settings": settings,
+            "primary_model": settings.llm_digest_model,
+        }
+        if app_config is not None:
+            client_kwargs["app_config"] = app_config
+        active_client = LLMClient(**client_kwargs)
     else:
         with_primary_model = getattr(llm_client, "with_primary_model", None)
         active_client = (

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from src.fetcher.models import RawArticle
@@ -61,10 +62,17 @@ def deduplicate_articles(
     database_path: str | None = None,
     dedup_window_days: int = 7,
     use_database_seen_urls: bool = True,
+    now: datetime | None = None,
 ) -> list[RawArticle]:
     seen_urls: set[str] = set()
     if database_path is not None and use_database_seen_urls:
-        seen_urls.update(load_recent_seen_urls(database_path, days=dedup_window_days))
+        seen_urls.update(
+            load_recent_seen_urls(
+                database_path,
+                days=dedup_window_days,
+                now=now,
+            )
+        )
     if recent_urls is not None:
         seen_urls.update(normalize_url(url) for url in recent_urls)
 
@@ -81,5 +89,13 @@ def deduplicate_articles(
     return deduplicated
 
 
-def load_recent_seen_urls(database_path: str, *, days: int = 7) -> set[str]:
-    return {normalize_url(url) for url in get_recent_urls(database_path, days=days)}
+def load_recent_seen_urls(
+    database_path: str,
+    *,
+    days: int = 7,
+    now: datetime | None = None,
+) -> set[str]:
+    return {
+        normalize_url(url)
+        for url in get_recent_urls(database_path, days=days, now=now)
+    }
