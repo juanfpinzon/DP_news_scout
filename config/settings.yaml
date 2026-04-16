@@ -17,13 +17,13 @@ dry_run: false
 pipeline_timeout: 600
 fetch_concurrency: 5
 rss_lookback_hours: 168
-dedup_window_days: 7
+dedup_window_days: 14
 request_timeout_seconds: 15
 rate_limit_seconds: 1.0
 email_max_width_px: 880
 issue_number_override: 0
 recency_priority_window_days: 7
-reuse_seen_db_window_days: 7
+reuse_seen_db_window_days: 14
 search_fallback_enabled: true
 search_fallback_provider: "brave"
 search_fallback_timeout_seconds: 15

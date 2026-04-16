@@ -114,14 +114,14 @@ def _build_config(*, dry_run: bool) -> AppConfig:
         pipeline_timeout=600,
         fetch_concurrency=5,
         rss_lookback_hours=168,
-        dedup_window_days=7,
+        dedup_window_days=14,
         request_timeout_seconds=15.0,
         rate_limit_seconds=1.0,
         max_digest_items_per_source=3,
         email_max_width_px=880,
         issue_number_override=0,
         recency_priority_window_days=7,
-        reuse_seen_db_window_days=7,
+        reuse_seen_db_window_days=14,
     )
     env = EnvConfig(
         openrouter_api_key="test-openrouter",

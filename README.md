@@ -1,6 +1,6 @@
 # Digital Procurement News Scout
 
-Digital Procurement News Scout (DPNS) is a daily procurement and digital transformation digest that:
+Digital Procurement News Scout (DPNS) is a weekly procurement and digital transformation digest that:
 
 - monitors 20 currently configured active sources (11 RSS, 9 scrape), plus 3 fallback-only sources,
 - fetches articles from RSS, approved scrape sources, and Brave-backed search fallback,

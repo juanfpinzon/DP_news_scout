@@ -841,14 +841,14 @@ def _build_no_news_email(*, issue_number: int, date_label: str) -> tuple[str, st
         "<html><body>"
         "<h1>Digital Procurement News Scout</h1>"
         f"<p>{date_label} · Issue #{issue_number}</p>"
-        "<p>No relevant digital procurement updates cleared the relevance threshold today.</p>"
+        "<p>No relevant digital procurement updates cleared the relevance threshold this week.</p>"
         "<p>The pipeline completed successfully and will resume with the next scheduled run.</p>"
         "</body></html>"
     )
     plaintext = (
         "DIGITAL PROCUREMENT NEWS SCOUT\n"
         f"{date_label} · Issue #{issue_number}\n\n"
-        "No relevant digital procurement updates cleared the relevance threshold today.\n"
+        "No relevant digital procurement updates cleared the relevance threshold this week.\n"
         "The pipeline completed successfully and will resume with the next scheduled run.\n"
     )
     return html, plaintext

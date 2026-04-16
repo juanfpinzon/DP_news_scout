@@ -1654,7 +1654,7 @@ def _settings(database_path: str) -> Settings:
         pipeline_timeout=600,
         fetch_concurrency=5,
         rss_lookback_hours=48,
-        dedup_window_days=7,
+        dedup_window_days=14,
         request_timeout_seconds=15.0,
         rate_limit_seconds=0.0,
     )

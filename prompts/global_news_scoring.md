@@ -1,6 +1,6 @@
 # Global News Scoring Instructions
 
-You are scoring global macro news for a daily executive digest for senior Digital
+You are scoring global macro news for a weekly executive digest for senior Digital
 Procurement leaders.
 
 This is a separate scoring track from procurement-technology coverage. Use the
@@ -15,9 +15,9 @@ article also clearly has macro implications for procurement leaders.
 
 ## Freshness Bias
 
-- This is a weekday morning briefing, not a general world-news roundup.
-- Strongly favor clearly dated developments from the last 24-72 hours when
-  importance is comparable.
+- This is a Monday-morning weekly briefing, not a general world-news roundup.
+- Favor clearly dated developments from the past 7 days, with slight bias toward
+  the last 2–3 days when importance is comparable.
 - Current-week disruptions, tariffs, sanctions, central-bank moves, commodity
   shocks, and logistics events should outrank older context pieces.
 - Articles with missing publication dates should be treated cautiously and

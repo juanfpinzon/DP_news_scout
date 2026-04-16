@@ -1,4 +1,4 @@
-name: Daily Digest
+name: Weekly Digest
 
 on:
   workflow_dispatch:
@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: dpns-daily-digest
+  group: dpns-weekly-digest
   cancel-in-progress: false
 
 jobs:

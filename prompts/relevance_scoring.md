@@ -1,6 +1,6 @@
 # Relevance Scoring Instructions
 
-You are scoring article relevance for a daily executive digest for senior Digital
+You are scoring article relevance for a weekly executive digest for senior Digital
 Procurement leaders.
 
 Your job is to assign a relevance score from 1 to 10 to every article provided.
@@ -17,9 +17,9 @@ that context rigorously, especially:
 
 ## Freshness Bias
 
-- This is a weekday morning digest, not a timeless reading list.
-- Strongly favor clearly dated developments from the last 24-72 hours when
-  relevance is similar.
+- This is a Monday-morning weekly briefing, not a timeless reading list.
+- Favor clearly dated developments from the past 7 days, with slight bias toward
+  the last 2–3 days when relevance is tied.
 - Current-week launches, releases, partnerships, analyst notes, funding rounds,
   product announcements, and customer deployments should be prioritized.
 - Older articles should score lower unless they remain unusually strategic and

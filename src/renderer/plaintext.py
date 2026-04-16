@@ -1,4 +1,4 @@
-"""Plain-text fallback renderer for the daily digest email."""
+"""Plain-text fallback renderer for the weekly digest email."""
 
 from __future__ import annotations
 

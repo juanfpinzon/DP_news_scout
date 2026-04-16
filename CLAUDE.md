@@ -2,7 +2,7 @@
 
 ## Project Summary
 
-DPNS is a daily automated email digest that currently monitors 16 configured procurement and digital transformation sources, uses Claude to score relevance and compose executive summaries, and delivers a curated briefing to Digital Procurement senior leaders at PepsiCo every weekday at 9:00 AM CET.
+DPNS is a weekly automated email digest that currently monitors 16 configured procurement and digital transformation sources, uses Claude to score relevance and compose executive summaries, and delivers a curated briefing to Digital Procurement senior leaders at PepsiCo every Monday at 9:00 AM CET.
 
 `AGENTS.md` is the canonical current implementation guide. This file is retained for compatibility and now mirrors the current high-level runtime defaults.
 

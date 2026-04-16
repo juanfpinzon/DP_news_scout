@@ -1109,7 +1109,7 @@ def _build_config(*, tmp_path, dry_run: bool, issue_number_override: int | None 
         pipeline_timeout=600,
         fetch_concurrency=5,
         rss_lookback_hours=48,
-        dedup_window_days=7,
+        dedup_window_days=14,
         request_timeout_seconds=15.0,
         rate_limit_seconds=1.0,
         issue_number_override=issue_number_override,

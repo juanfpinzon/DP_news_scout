@@ -21,7 +21,7 @@ def test_load_config_reads_defaults() -> None:
     assert config.settings.max_articles_per_source == 10
     assert config.settings.fetch_concurrency == 5
     assert config.settings.rss_lookback_hours == 168
-    assert config.settings.dedup_window_days == 7
+    assert config.settings.dedup_window_days == 14
     assert config.settings.max_digest_items_per_source == 3
     assert config.settings.global_news_relevance_threshold == 5
     assert config.settings.global_news_max_items == 3
@@ -29,7 +29,7 @@ def test_load_config_reads_defaults() -> None:
     assert config.settings.email_max_width_px == 880
     assert config.settings.issue_number_override == 0
     assert config.settings.recency_priority_window_days == 7
-    assert config.settings.reuse_seen_db_window_days == 7
+    assert config.settings.reuse_seen_db_window_days == 14
     assert config.settings.search_fallback_enabled is True
     assert config.settings.search_fallback_provider == "brave"
     assert config.settings.search_fallback_timeout_seconds == 15
@@ -135,7 +135,7 @@ def test_load_config_rejects_invalid_source_category(monkeypatch: pytest.MonkeyP
                 "pipeline_timeout": 600,
                 "fetch_concurrency": 5,
                 "rss_lookback_hours": 48,
-                "dedup_window_days": 7,
+                "dedup_window_days": 14,
                 "request_timeout_seconds": 15.0,
                 "rate_limit_seconds": 1.0,
             }
@@ -180,7 +180,7 @@ def test_load_config_supports_legacy_recipient_list(monkeypatch: pytest.MonkeyPa
                 "pipeline_timeout": 600,
                 "fetch_concurrency": 5,
                 "rss_lookback_hours": 48,
-                "dedup_window_days": 7,
+                "dedup_window_days": 14,
                 "request_timeout_seconds": 15.0,
                 "rate_limit_seconds": 1.0,
             }
@@ -222,7 +222,7 @@ def test_load_config_uses_legacy_llm_model_for_both_stages(
                 "pipeline_timeout": 600,
                 "fetch_concurrency": 5,
                 "rss_lookback_hours": 48,
-                "dedup_window_days": 7,
+                "dedup_window_days": 14,
                 "request_timeout_seconds": 15.0,
                 "rate_limit_seconds": 1.0,
             }
@@ -262,7 +262,7 @@ def test_load_config_prefers_stage_specific_models_over_legacy_alias(
                 "pipeline_timeout": 600,
                 "fetch_concurrency": 5,
                 "rss_lookback_hours": 48,
-                "dedup_window_days": 7,
+                "dedup_window_days": 14,
                 "request_timeout_seconds": 15.0,
                 "rate_limit_seconds": 1.0,
             }
