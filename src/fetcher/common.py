@@ -301,7 +301,7 @@ class RobotsPolicy:
                 robots_url=robots_url,
                 user_agent=user_agent,
             )
-            if fallback_status is not None and fallback_status < 400 and fallback_body is not None:
+            if fallback_status is not None and 200 <= fallback_status < 300 and fallback_body is not None:
                 return _RobotsFetchResult(
                     state=_RobotsFetchState.PARSED,
                     parser=_parse_robots_body(robots_url=robots_url, body=fallback_body),
@@ -313,16 +313,16 @@ class RobotsPolicy:
                 parser=_disallow_all_parser(),
             )
 
+        if 200 <= response.status_code < 300:
+            return _RobotsFetchResult(
+                state=_RobotsFetchState.PARSED,
+                parser=_parse_robots_body(robots_url=robots_url, body=response.text),
+            )
+
         if response.status_code in {404, 410}:
             return _RobotsFetchResult(state=_RobotsFetchState.MISSING)
 
-        if response.status_code >= 400:
-            return _RobotsFetchResult(state=_RobotsFetchState.UNKNOWN)
-
-        return _RobotsFetchResult(
-            state=_RobotsFetchState.PARSED,
-            parser=_parse_robots_body(robots_url=robots_url, body=response.text),
-        )
+        return _RobotsFetchResult(state=_RobotsFetchState.UNKNOWN)
 
 
 def _fetch_robots_txt_with_urllib(*, robots_url: str, user_agent: str) -> tuple[int | None, str | None]:

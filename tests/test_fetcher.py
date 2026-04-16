@@ -523,6 +523,27 @@ def test_robots_policy_denies_when_robots_status_is_unknown() -> None:
         asyncio.run(client.aclose())
 
 
+def test_robots_policy_denies_when_robots_redirect_is_not_followed() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/robots.txt":
+            return httpx.Response(302, headers={"Location": "/robots-live.txt"})
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    policy = RobotsPolicy()
+
+    try:
+        assert not asyncio.run(
+            policy.allows(
+                client=client,
+                url="https://example.com/feed.xml",
+                user_agent="Mozilla/5.0",
+            )
+        )
+    finally:
+        asyncio.run(client.aclose())
+
+
 def test_robots_policy_denies_when_robots_fetch_errors() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/robots.txt":
