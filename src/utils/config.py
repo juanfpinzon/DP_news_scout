@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +47,7 @@ class Settings:
     max_digest_items_per_source: int = 3
     email_max_width_px: int = 880
     issue_number_override: int | None = None
+    issue_number_start_date: str | None = None
     recency_priority_window_days: int = 7
     reuse_seen_db_window_days: int = 7
     search_fallback_enabled: bool = False
@@ -98,6 +100,7 @@ def load_config(env_file: Path | None = None) -> AppConfig:
         "max_digest_items_per_source": 3,
         "email_max_width_px": 880,
         "issue_number_override": None,
+        "issue_number_start_date": None,
         "recency_priority_window_days": 7,
         "reuse_seen_db_window_days": 7,
         "global_news_relevance_threshold": 5,
@@ -204,6 +207,11 @@ def load_config(env_file: Path | None = None) -> AppConfig:
             "ISSUE_NUMBER_OVERRIDE",
             settings_data,
             "issue_number_override",
+        ),
+        issue_number_start_date=_get_optional_iso_date(
+            "ISSUE_NUMBER_START_DATE",
+            settings_data,
+            "issue_number_start_date",
         ),
         recency_priority_window_days=_get_int(
             "RECENCY_PRIORITY_WINDOW_DAYS",
@@ -351,6 +359,31 @@ def _get_optional_int(env_key: str, config: dict[str, Any], config_key: str) -> 
         raise ConfigError(f"Invalid integer for '{config_key}': {value!r}") from exc
 
 
+def _get_optional_iso_date(
+    env_key: str,
+    config: dict[str, Any],
+    config_key: str,
+) -> str | None:
+    value = os.getenv(env_key)
+    if value is None:
+        value = config.get(config_key)
+
+    if value is None:
+        return None
+
+    if isinstance(value, date):
+        return value.isoformat()
+
+    normalized = str(value).strip()
+    if normalized == "" or normalized.lower() in {"none", "null"}:
+        return None
+
+    try:
+        return date.fromisoformat(normalized).isoformat()
+    except ValueError as exc:
+        raise ConfigError(f"Invalid ISO date for '{config_key}': {value!r}") from exc
+
+
 def _get_float(env_key: str, config: dict[str, Any], config_key: str) -> float:
     value = os.getenv(env_key, config.get(config_key))
     try:
@@ -409,6 +442,11 @@ def _validate_settings(settings: Settings) -> None:
         raise ConfigError("email_max_width_px must be greater than 0")
     if settings.issue_number_override is not None and settings.issue_number_override < 0:
         raise ConfigError("issue_number_override must be 0 or greater")
+    if settings.issue_number_start_date is not None:
+        try:
+            date.fromisoformat(settings.issue_number_start_date)
+        except ValueError as exc:
+            raise ConfigError("issue_number_start_date must use YYYY-MM-DD format") from exc
     if settings.recency_priority_window_days <= 0:
         raise ConfigError("recency_priority_window_days must be greater than 0")
     if settings.reuse_seen_db_window_days <= 0:

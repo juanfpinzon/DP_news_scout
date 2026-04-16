@@ -133,7 +133,7 @@ dpns/
 - Dedup window: 7 days by URL (normalized — tracking params stripped).
 - Stored articles are used for recent-URL dedup and reuse testing, not as an LLM cache.
 - Reuse mode only considers rows inside `reuse_seen_db_window_days` and excludes undated scraped rows.
-- Current issue number is fixed to `0` through `config/settings.yaml` via `issue_number_override`.
+- Weekly issue numbers are anchored by `config/settings.yaml` via `issue_number_start_date`; the Monday, April 20, 2026 run is `Issue #1` and each subsequent weekly run increments by one.
 
 ---
 
@@ -155,7 +155,7 @@ LLM_DIGEST_MODEL=anthropic/claude-sonnet-4-6
 LLM_MODEL_FALLBACK=anthropic/claude-haiku-4.5
 RSS_LOOKBACK_HOURS=168
 EMAIL_MAX_WIDTH_PX=880
-ISSUE_NUMBER_OVERRIDE=0
+ISSUE_NUMBER_START_DATE=2026-04-20
 SEARCH_FALLBACK_ENABLED=true
 SEARCH_FALLBACK_PROVIDER=brave
 SEARCH_FALLBACK_TIMEOUT_SECONDS=15

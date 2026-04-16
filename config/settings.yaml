@@ -21,7 +21,7 @@ dedup_window_days: 14
 request_timeout_seconds: 15
 rate_limit_seconds: 1.0
 email_max_width_px: 880
-issue_number_override: 0
+issue_number_start_date: "2026-04-20"
 recency_priority_window_days: 7
 reuse_seen_db_window_days: 14
 search_fallback_enabled: true

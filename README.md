@@ -17,7 +17,7 @@ Digital Procurement News Scout (DPNS) is a weekly procurement and digital transf
 - Mock-render preview tool: `python scripts/test_email.py`
 - SQLite storage: `data/dpns.db`
 - Live fetch freshness window: 7 days
-- Current issue number override: fixed to `0` via `config/settings.yaml`
+- Weekly issue numbering anchor: `issue_number_start_date: 2026-04-20` in `config/settings.yaml`
 
 ## Quick Start
 
@@ -63,7 +63,7 @@ Important current behavior:
 - The live fetch window for RSS and scrape ingestion is currently 7 days.
 - Stored articles in SQLite are used for recent-URL dedup, not as an LLM cache.
 - Successful live runs persist article metadata back into SQLite.
-- `config/settings.yaml` currently sets `issue_number_override: 0`, so all live/manual runs show `Issue #0`.
+- Issue numbers are calendar-based from `issue_number_start_date: 2026-04-20`, so the Monday, April 20, 2026 run is `Issue #1` and each subsequent weekly run increments by one.
 - Digest article selection is source-balanced with `max_digest_items_per_source: 3`.
 - Desktop email width is configurable and currently set to `880px`.
 - RSS and scrape fetches check `robots.txt` before fetching source content.
@@ -96,7 +96,7 @@ llm_model_fallback: anthropic/claude-haiku-4.5
 rss_lookback_hours: 168
 dedup_window_days: 7
 email_max_width_px: 880
-issue_number_override: 0
+issue_number_start_date: 2026-04-20
 search_fallback_enabled: true
 search_fallback_provider: brave
 search_fallback_timeout_seconds: 15
@@ -117,7 +117,8 @@ Meaning:
 - `rss_lookback_hours`: live fetch freshness window for RSS and scrape ingestion, currently 7 days.
 - `dedup_window_days`: recent URL dedup window against SQLite.
 - `email_max_width_px`: desktop max width for the HTML digest.
-- `issue_number_override`: when set, overrides dynamic issue numbering. Remove it or set it to `null` to restore dynamic numbering later.
+- `issue_number_start_date`: weekly issue-number anchor date. The configured date becomes `Issue #1`, and each 7-day interval after that increments the issue number.
+- `issue_number_override`: optional emergency override that replaces the weekly issue number when set.
 - `search_fallback_enabled`: global switch for Brave-backed fallback on blocked, failed, or empty active sources.
 - `search_fallback_provider`: currently fixed to `brave`.
 - `search_fallback_timeout_seconds`: timeout for the Brave request itself.
@@ -145,7 +146,7 @@ LLM_DIGEST_MODEL=anthropic/claude-sonnet-4-6
 LLM_MODEL_FALLBACK=anthropic/claude-haiku-4.5
 RSS_LOOKBACK_HOURS=168
 EMAIL_MAX_WIDTH_PX=880
-ISSUE_NUMBER_OVERRIDE=0
+ISSUE_NUMBER_START_DATE=2026-04-20
 SEARCH_FALLBACK_ENABLED=true
 SEARCH_FALLBACK_PROVIDER=brave
 SEARCH_FALLBACK_TIMEOUT_SECONDS=15

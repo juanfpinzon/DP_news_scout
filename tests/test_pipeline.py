@@ -417,6 +417,78 @@ def test_run_pipeline_uses_issue_number_override_when_configured(tmp_path, monke
     assert sent["subject"] == "Digital Procurement News Scout | April 4, 2026 | Issue #0"
 
 
+def test_resolve_issue_number_uses_weekly_start_date_in_configured_timezone(tmp_path) -> None:
+    config = _build_config(
+        tmp_path=tmp_path,
+        dry_run=False,
+        issue_number_start_date="2026-04-20",
+    )
+
+    assert main_module.resolve_issue_number(
+        config.settings,
+        fallback=99,
+        now=datetime(2026, 4, 19, 20, 30, tzinfo=timezone.utc),
+    ) == 0
+    assert main_module.resolve_issue_number(
+        config.settings,
+        fallback=99,
+        now=datetime(2026, 4, 19, 22, 30, tzinfo=timezone.utc),
+    ) == 1
+    assert main_module.resolve_issue_number(
+        config.settings,
+        fallback=99,
+        now=datetime(2026, 4, 27, 8, 0, tzinfo=timezone.utc),
+    ) == 2
+
+
+def test_run_pipeline_uses_configured_timezone_for_display_date(tmp_path, monkeypatch) -> None:
+    config = _build_config(
+        tmp_path=tmp_path,
+        dry_run=False,
+        issue_number_start_date="2026-04-20",
+    )
+    sent: dict[str, object] = {}
+
+    monkeypatch.setattr("src.main.load_source_registry", lambda **_kwargs: [_make_source("Source A")])
+
+    async def fake_fetch_all_sources_report(**_kwargs):
+        return _make_fetch_summary(
+            articles=[_make_raw_article(1, source="Source A")],
+            sources_attempted=1,
+            sources_succeeded=1,
+            sources_failed=0,
+            articles_found=1,
+        )
+
+    async def fake_score_articles(*_args, **_kwargs):
+        return [_make_scored_article(1, source="Source A")]
+
+    async def fake_compose_digest(*_args, **_kwargs):
+        return _make_digest()
+
+    monkeypatch.setattr("src.main.fetch_all_sources_report", fake_fetch_all_sources_report)
+    monkeypatch.setattr("src.main.score_articles", fake_score_articles)
+    monkeypatch.setattr("src.main.compose_digest", fake_compose_digest)
+    monkeypatch.setattr("src.main.render_digest", lambda *_args, **_kwargs: "<html>digest</html>")
+    monkeypatch.setattr("src.main.render_plaintext", lambda *_args, **_kwargs: "digest")
+    monkeypatch.setattr(
+        "src.main.send_digest",
+        lambda html, plaintext, subject, **kwargs: sent.update(
+            {"html": html, "plaintext": plaintext, "subject": subject, "kwargs": kwargs}
+        )
+        or True,
+    )
+
+    result = run_pipeline(
+        config=config,
+        now=datetime(2026, 4, 19, 22, 30, tzinfo=timezone.utc),
+    )
+
+    assert result.status == "success"
+    assert result.issue_number == 1
+    assert sent["subject"] == "Digital Procurement News Scout | April 20, 2026 | Issue #1"
+
+
 def test_run_pipeline_appends_optional_subject_suffix(tmp_path, monkeypatch) -> None:
     config = _build_config(tmp_path=tmp_path, dry_run=False, issue_number_override=0)
     sent: dict[str, object] = {}
@@ -1092,7 +1164,13 @@ def test_run_pipeline_real_rss_and_llm_dry_run(tmp_path, monkeypatch) -> None:
     assert row[4] is None
 
 
-def _build_config(*, tmp_path, dry_run: bool, issue_number_override: int | None = None) -> AppConfig:
+def _build_config(
+    *,
+    tmp_path,
+    dry_run: bool,
+    issue_number_override: int | None = None,
+    issue_number_start_date: str | None = None,
+) -> AppConfig:
     settings = Settings(
         max_articles_per_source=10,
         max_digest_items=15,
@@ -1113,6 +1191,7 @@ def _build_config(*, tmp_path, dry_run: bool, issue_number_override: int | None 
         request_timeout_seconds=15.0,
         rate_limit_seconds=1.0,
         issue_number_override=issue_number_override,
+        issue_number_start_date=issue_number_start_date,
     )
     env = EnvConfig(
         openrouter_api_key="openrouter-test",
