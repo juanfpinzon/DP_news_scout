@@ -27,7 +27,8 @@ def test_load_config_reads_defaults() -> None:
     assert config.settings.global_news_max_items == 3
     assert config.settings.global_news_max_per_source == 2
     assert config.settings.email_max_width_px == 880
-    assert config.settings.issue_number_override == 0
+    assert config.settings.issue_number_override is None
+    assert config.settings.issue_number_start_date == "2026-04-20"
     assert config.settings.recency_priority_window_days == 7
     assert config.settings.reuse_seen_db_window_days == 14
     assert config.settings.search_fallback_enabled is True

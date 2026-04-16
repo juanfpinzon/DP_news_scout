@@ -18,6 +18,7 @@ from src.fetcher import FetchSummary, fetch_all_sources_report, load_source_regi
 from src.main import (
     DEFAULT_SUBJECT_PREFIX,
     PipelineResult,
+    format_display_date,
     load_raw_articles_from_storage,
     resolve_issue_number,
     run_pipeline,
@@ -308,10 +309,11 @@ async def _render_live_digest(
     progress_callback: Callable[[str], None] | None = None,
 ) -> RenderedDigestResult:
     initialize_database(config.settings.database_path)
-    date_label = _format_display_date(now)
+    date_label = format_display_date(config.settings, now=now)
     issue_number = resolve_issue_number(
         config.settings,
         fallback=_next_issue_number(config.settings.database_path),
+        now=now,
     )
     emit_progress(progress_callback, "Loading source registry.")
     sources = load_source_registry(
@@ -609,12 +611,6 @@ def _default_plaintext_path(preview_path: Path) -> Path:
     if preview_path.suffix:
         return preview_path.with_suffix(".txt")
     return Path(f"{preview_path}.txt")
-
-
-def _format_display_date(current_time: datetime) -> str:
-    return current_time.strftime("%B ") + str(current_time.day) + current_time.strftime(", %Y")
-
-
 def _current_time() -> datetime:
     return datetime.now(timezone.utc)
 
