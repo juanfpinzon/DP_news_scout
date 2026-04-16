@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import re
+from collections import OrderedDict
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from enum import Enum
 from email.utils import parsedate_to_datetime
 from html import unescape
 from time import monotonic
@@ -42,6 +45,8 @@ TRACKABLE_CONTENT_MARKERS = (
 
 ROBOTS_TXT_ACCEPT_HEADER = "text/plain,*/*;q=0.1"
 ROBOTS_TXT_TIMEOUT_SECONDS = 15.0
+ROBOTS_CACHE_TTL_SECONDS = 900.0
+ROBOTS_CACHE_MAX_ENTRIES = 256
 
 
 def build_request_headers(source_name: str, url: str) -> dict[str, str]:
@@ -182,9 +187,34 @@ class DomainRateLimiter:
             self._last_called[domain] = monotonic()
 
 
+class _RobotsFetchState(Enum):
+    PARSED = "parsed"
+    MISSING = "missing"
+    UNKNOWN = "unknown"
+
+
+@dataclass(slots=True)
+class _RobotsFetchResult:
+    state: _RobotsFetchState
+    parser: robotparser.RobotFileParser | None = None
+
+
+@dataclass(slots=True)
+class _RobotsCacheEntry:
+    result: _RobotsFetchResult
+    expires_at: float
+
+
 class RobotsPolicy:
-    def __init__(self) -> None:
-        self._parsers: dict[str, robotparser.RobotFileParser | None] = {}
+    def __init__(
+        self,
+        *,
+        cache_ttl_seconds: float = ROBOTS_CACHE_TTL_SECONDS,
+        max_cache_entries: int = ROBOTS_CACHE_MAX_ENTRIES,
+    ) -> None:
+        self._cache_ttl_seconds = max(0.0, cache_ttl_seconds)
+        self._max_cache_entries = max(1, max_cache_entries)
+        self._parsers: OrderedDict[str, _RobotsCacheEntry] = OrderedDict()
         self._locks: dict[str, asyncio.Lock] = {}
 
     async def allows(
@@ -200,18 +230,48 @@ class RobotsPolicy:
         lock = self._locks.setdefault(robots_url, asyncio.Lock())
 
         async with lock:
-            if robots_url not in self._parsers:
-                self._parsers[robots_url] = await self._fetch_parser(
+            entry = self._get_cached_entry(robots_url)
+            if entry is None:
+                result = await self._fetch_parser(
                     client=client,
                     robots_url=robots_url,
                     user_agent=user_agent,
                     allow_network_fallback=allow_network_fallback,
                 )
+                entry = self._store_cached_entry(robots_url, result)
 
-            parser = self._parsers[robots_url]
-            if parser is None:
+            if entry.result.state is _RobotsFetchState.MISSING:
                 return True
-            return parser.can_fetch(user_agent, url)
+            if entry.result.state is _RobotsFetchState.UNKNOWN or entry.result.parser is None:
+                return False
+            return entry.result.parser.can_fetch(user_agent, url)
+
+    def _get_cached_entry(self, robots_url: str) -> _RobotsCacheEntry | None:
+        entry = self._parsers.get(robots_url)
+        if entry is None:
+            return None
+        if entry.expires_at <= monotonic():
+            self._parsers.pop(robots_url, None)
+            return None
+        self._parsers.move_to_end(robots_url)
+        return entry
+
+    def _store_cached_entry(
+        self,
+        robots_url: str,
+        result: _RobotsFetchResult,
+    ) -> _RobotsCacheEntry:
+        entry = _RobotsCacheEntry(
+            result=result,
+            expires_at=monotonic() + self._cache_ttl_seconds,
+        )
+        self._parsers[robots_url] = entry
+        self._parsers.move_to_end(robots_url)
+
+        while len(self._parsers) > self._max_cache_entries:
+            self._parsers.popitem(last=False)
+
+        return entry
 
     async def _fetch_parser(
         self,
@@ -220,18 +280,21 @@ class RobotsPolicy:
         robots_url: str,
         user_agent: str,
         allow_network_fallback: bool,
-    ) -> robotparser.RobotFileParser | None:
+    ) -> _RobotsFetchResult:
         try:
             response = await client.get(
                 robots_url,
                 headers={"User-Agent": user_agent, "Accept": ROBOTS_TXT_ACCEPT_HEADER},
             )
         except httpx.HTTPError:
-            return None
+            return _RobotsFetchResult(state=_RobotsFetchState.UNKNOWN)
 
         if response.status_code in {401, 403}:
             if not allow_network_fallback:
-                return _disallow_all_parser()
+                return _RobotsFetchResult(
+                    state=_RobotsFetchState.PARSED,
+                    parser=_disallow_all_parser(),
+                )
 
             fallback_status, fallback_body = await asyncio.to_thread(
                 _fetch_robots_txt_with_urllib,
@@ -239,15 +302,27 @@ class RobotsPolicy:
                 user_agent=user_agent,
             )
             if fallback_status is not None and fallback_status < 400 and fallback_body is not None:
-                return _parse_robots_body(robots_url=robots_url, body=fallback_body)
+                return _RobotsFetchResult(
+                    state=_RobotsFetchState.PARSED,
+                    parser=_parse_robots_body(robots_url=robots_url, body=fallback_body),
+                )
             if fallback_status in {404, 410}:
-                return None
-            return _disallow_all_parser()
+                return _RobotsFetchResult(state=_RobotsFetchState.MISSING)
+            return _RobotsFetchResult(
+                state=_RobotsFetchState.PARSED,
+                parser=_disallow_all_parser(),
+            )
+
+        if response.status_code in {404, 410}:
+            return _RobotsFetchResult(state=_RobotsFetchState.MISSING)
 
         if response.status_code >= 400:
-            return None
+            return _RobotsFetchResult(state=_RobotsFetchState.UNKNOWN)
 
-        return _parse_robots_body(robots_url=robots_url, body=response.text)
+        return _RobotsFetchResult(
+            state=_RobotsFetchState.PARSED,
+            parser=_parse_robots_body(robots_url=robots_url, body=response.text),
+        )
 
 
 def _fetch_robots_txt_with_urllib(*, robots_url: str, user_agent: str) -> tuple[int | None, str | None]:
