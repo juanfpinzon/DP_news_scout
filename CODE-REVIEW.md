@@ -9,7 +9,7 @@ Findings ordered by severity.
 
 ## CRITICAL
 
-### C1. Robots policy fails open on 5xx/timeouts
+### C1. Robots policy fails open on 5xx/timeouts.   -- ** FIXED ** 
 - **File:** [src/fetcher/common.py:157-213](src/fetcher/common.py)
 - **Problem:** CLAUDE.md states robots.txt is deny-by-default, but the current implementation only denies on HTTP 401/403. Any other non-2xx status (500, 502, 503, timeouts, network errors) results in `_fetch_parser` returning `None`, and `RobotsPolicy.allows()` then returns `True` (fail-open). Also, `_parser_cache` is unbounded and lives for process lifetime.
 - **Fix:** Treat unknown states as deny. Only allow when (a) `RobotFileParser` was successfully populated, or (b) the server returned a definitive 404/410. Add a bounded in-memory TTL cache of robots fetches per host.
