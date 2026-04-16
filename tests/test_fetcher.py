@@ -1260,7 +1260,7 @@ def test_fetch_all_sources_deduplicates_and_saves_articles(tmp_path) -> None:
         "https://example.com/shared-story",
         "https://example.com/unique-story",
     ]
-    assert get_recent_urls(database_path, days=7) == {
+    assert get_recent_urls(database_path, days=7, now=now) == {
         "https://example.com/shared-story",
         "https://example.com/unique-story",
     }
@@ -1323,7 +1323,9 @@ def test_fetch_all_sources_loads_registry_when_sources_not_provided(tmp_path, mo
         asyncio.run(client.aclose())
 
     assert [article.url for article in articles] == ["https://example.com/registry-story"]
-    assert get_recent_urls(database_path, days=7) == {"https://example.com/registry-story"}
+    assert get_recent_urls(database_path, days=7, now=now) == {
+        "https://example.com/registry-story"
+    }
 
 
 def test_fetch_all_sources_continues_when_one_source_fails(tmp_path) -> None:

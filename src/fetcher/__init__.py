@@ -120,6 +120,7 @@ async def fetch_all_sources_report(
         database_path=database_path,
         dedup_window_days=settings.dedup_window_days,
         use_database_seen_urls=use_database_seen_urls,
+        now=now,
     )
     stored_count = (
         save_articles(

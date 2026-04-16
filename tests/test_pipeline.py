@@ -98,7 +98,11 @@ def test_run_pipeline_happy_path_sends_digest_and_updates_run(tmp_path, monkeypa
         ).fetchone()
 
     assert row == (1, "success", 2, 2, 4, None)
-    assert get_recent_urls(config.settings.database_path, days=7) == {
+    assert get_recent_urls(
+        config.settings.database_path,
+        days=7,
+        now=datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
+    ) == {
         "https://example.com/article-1",
         "https://example.com/article-2",
     }
@@ -852,7 +856,11 @@ def test_run_pipeline_dry_run_skips_send(tmp_path, monkeypatch) -> None:
     assert result.status == "success"
     assert result.email_sent is False
     assert result.dry_run is True
-    assert get_recent_urls(config.settings.database_path, days=7) == set()
+    assert get_recent_urls(
+        config.settings.database_path,
+        days=7,
+        now=datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
+    ) == set()
 
 
 def test_run_pipeline_sends_no_news_notice_when_no_relevant_articles(tmp_path, monkeypatch) -> None:
@@ -898,7 +906,11 @@ def test_run_pipeline_sends_no_news_notice_when_no_relevant_articles(tmp_path, m
     )
     assert "No relevant digital procurement updates" in sent["html"]
     assert "No relevant digital procurement updates" in sent["plaintext"]
-    assert get_recent_urls(config.settings.database_path, days=7) == {
+    assert get_recent_urls(
+        config.settings.database_path,
+        days=7,
+        now=datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
+    ) == {
         "https://example.com/article-1",
     }
 
@@ -933,7 +945,11 @@ def test_run_pipeline_marks_failed_when_fetch_stage_raises(tmp_path, monkeypatch
         ).fetchone()
 
     assert row == ("failed", 0, 0, 0, "fetcher stage failed: network blew up")
-    assert get_recent_urls(config.settings.database_path, days=7) == set()
+    assert get_recent_urls(
+        config.settings.database_path,
+        days=7,
+        now=datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
+    ) == set()
 
 
 def test_run_pipeline_marks_failed_when_source_registry_load_fails(tmp_path, monkeypatch) -> None:
@@ -996,7 +1012,11 @@ def test_run_pipeline_marks_failed_when_all_sources_fail(tmp_path, monkeypatch) 
     assert result.status == "failed"
     assert result.error == "fetcher stage failed: all configured sources failed to fetch"
     assert result.email_sent is False
-    assert get_recent_urls(config.settings.database_path, days=7) == set()
+    assert get_recent_urls(
+        config.settings.database_path,
+        days=7,
+        now=datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
+    ) == set()
 
 
 def test_run_pipeline_succeeds_when_some_sources_fail(tmp_path, monkeypatch) -> None:
@@ -1229,6 +1249,7 @@ def _make_raw_article(number: int, *, source: str, category: str = "procurement"
         source_url="https://example.com/feed.xml",
         category=category,
         published_at="2026-04-04T08:00:00+00:00",
+        fetched_at="2026-04-04T08:00:00+00:00",
         summary=f"Summary {number}",
     )
 
@@ -1241,6 +1262,7 @@ def _make_scored_article(number: int, *, source: str, category: str = "procureme
         source_url="https://example.com/feed.xml",
         category=category,
         published_at="2026-04-04T08:00:00+00:00",
+        fetched_at="2026-04-04T08:00:00+00:00",
         summary=f"Summary {number}",
         relevance_score=8,
         reasoning="Relevant to digital procurement",
