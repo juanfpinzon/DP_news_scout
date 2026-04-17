@@ -598,6 +598,7 @@ async def _run_pipeline_async(
             send_kwargs: dict[str, Any] = {
                 "config": config,
                 "run_id": run_id,
+                "issue_number": issue_number,
             }
             if progress_callback is not None:
                 send_kwargs["progress_callback"] = progress_callback

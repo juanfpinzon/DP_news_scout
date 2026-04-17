@@ -182,6 +182,54 @@ def test_send_digest_uses_requested_group(tmp_path) -> None:
     assert client.inboxes.messages.calls[0][1]["bcc"] == ["tester@example.com"]
 
 
+def test_send_digest_skips_duplicate_delivery_when_subject_suffix_changes(tmp_path) -> None:
+    config = _build_config(
+        tmp_path=tmp_path,
+        groups={
+            "leadership": [RecipientConfig(email="leader@example.com")],
+            "test": [RecipientConfig(email="tester@example.com")],
+        },
+    )
+    client = FakeAgentMailClient([FakeResponse(), FakeResponse()])
+    first_run_id = _create_run(config)
+    second_run_id = _create_run(config)
+
+    first_sent = send_digest(
+        "<html>Digest</html>",
+        "Digest",
+        "Digital Procurement News Scout | April 4, 2026 | Issue #1 | Manual run 08:00:00 UTC",
+        config=config,
+        run_id=first_run_id,
+        issue_number=1,
+        client=client,
+        sleep_fn=lambda _: None,
+    )
+    second_sent = send_digest(
+        "<html>Digest</html>",
+        "Digest",
+        "Digital Procurement News Scout | April 4, 2026 | Issue #1 | Manual run 08:05:00 UTC",
+        config=config,
+        run_id=second_run_id,
+        issue_number=1,
+        client=client,
+        sleep_fn=lambda _: None,
+    )
+
+    assert first_sent is True
+    assert second_sent is True
+    assert len(client.inboxes.messages.calls) == 1
+
+    with sqlite3.connect(config.settings.database_path) as connection:
+        rows = connection.execute(
+            "SELECT run_id, recipient_count, status, error FROM delivery_log ORDER BY id"
+        ).fetchall()
+
+    assert rows == [
+        (first_run_id, 1, "sent", None),
+        (second_run_id, 1, "idempotent_skip", None),
+    ]
+
+
 def _build_config(
     *,
     tmp_path,
