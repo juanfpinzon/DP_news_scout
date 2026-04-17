@@ -1,27 +1,43 @@
 #!/bin/zsh
 
-BRANCH=$1
-BASE=${2:-main}
+# --- DEFAULTS ---
+BASE_BRANCH="DEV"  # Changed from main to DEV
 
-if [ -z "$BRANCH" ]; then
-    echo "Usage: ./vibe-start $BRANCH_NAME [$BASE_BRANCH]"
+# --- FLAG PARSING ---
+# Usage: ./vibe-start.sh [-r reference_branch] <new_branch_name>
+while getopts "r:" opt; do
+  case $opt in
+    r) BASE_BRANCH=$OPTARG ;;
+    \?) echo "Invalid option: -$OPTARG" >&2; exit 1 ;;
+  esac
+done
+
+# Shift the arguments so $1 becomes the new branch name
+shift $((OPTIND -1))
+NEW_BRANCH=$1
+
+if [ -z "$NEW_BRANCH" ]; then
+    echo "Usage: ./vibe-start [-r base_branch] <new_branch_name>"
+    echo "Default base branch is: $BASE_BRANCH"
     exit 1
 fi
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
 REPO_NAME=$(basename "$REPO_ROOT")
-TARGET_DIR="../$REPO_NAME-worktrees/$BRANCH"
-SESSION_NAME="vibe-$BRANCH"
+TARGET_DIR="../$REPO_NAME-worktrees/$NEW_BRANCH"
+SESSION_NAME="vibe-$NEW_BRANCH"
 
 # --- 1. WORKTREE SETUP ---
 if [ -d "$TARGET_DIR" ]; then
-    echo "🔄 Worktree exists. Resuming..."
+    echo "🔄 Worktree exists for '$NEW_BRANCH'. Resuming..."
 else
-    echo "🚀 Creating NEW worktree for '$BRANCH'..."
-    git worktree add -b "$BRANCH" "$TARGET_DIR" "$BASE"
+    echo "🚀 Creating NEW worktree: $NEW_BRANCH (Based on: $BASE_BRANCH)"
+    # git worktree add -b <new-branch> <path> <start-point>
+    git worktree add -b "$NEW_BRANCH" "$TARGET_DIR" "$BASE_BRANCH"
+    
+    # Environment Setup
     cp "$REPO_ROOT/.env" "$TARGET_DIR/" 2>/dev/null
     cd "$TARGET_DIR"
-    # Adjust this install command to your stack
     npm install &>/dev/null 
 fi
 
@@ -31,31 +47,23 @@ cd "$TARGET_DIR"
 tmux has-session -t "$SESSION_NAME" 2>/dev/null
 
 if [ $? != 0 ]; then
-    # Create session
     tmux new-session -d -s "$SESSION_NAME" -n "coding"
     tmux split-window -h
     
-    # --- PANE 0: LEAD ENGINEER (CODEX) ---
-    # Define the "Amnesia Fix" prompt for Codex
-    CODEX_PROMPT="You are the Lead Engineer in a Git Worktree for branch: $BRANCH. Your partner is Claude (in the right pane), who is the Planner. Focus strictly on writing high-quality code. Do not worry about Git commits; Claude handles that. Do nothing for now, await further instructions."
-
+    # PANE 0: LEAD ENGINEER (CODEX)
+    CODEX_PROMPT="You are the Lead Engineer in a Git Worktree for branch: $NEW_BRANCH (base: $BASE_BRANCH). Your partner is Claude (in the right pane). Focus strictly on writing code. Claude handles Git. Do nothing for now, await further instructions."
     tmux select-pane -t 0
     tmux send-keys "codex" Enter
-    sleep 2 # Give the CLI a second to boot before typing the prompt
+    sleep 2
     tmux send-keys "$CODEX_PROMPT" Enter
 
-    # --- PANE 1: PLANNER & REVIEWER (CLAUDE) ---
-    # Define the "Amnesia Fix" prompt for Claude
-    CLAUDE_PROMPT="You are the Lead Planner and Reviewer in a Git Worktree for branch: $BRANCH. Your partner is Codex (in the left pane), who is the Engineer. You are responsible for reviewing Codex's file changes, running tests, and performing all 'git add' and 'git commit' operations. Do nothing for now, await further instructions."
-
+    # PANE 1: PLANNER & REVIEWER (CLAUDE)
+    CLAUDE_PROMPT="You are the Lead Planner/Reviewer in a Git Worktree for branch: $NEW_BRANCH (base: $BASE_BRANCH). Codex (left pane) is the Engineer. You review changes and handle all 'git add/commit' operations. Do nothing for now, await further instructions."
     tmux select-pane -t 1
     tmux send-keys "claude" Enter
     sleep 2
     tmux send-keys "$CLAUDE_PROMPT" Enter
 fi
 
-# Open VS Code for the worktree
 code .
-
-# Attach to the session
 tmux attach-session -t "$SESSION_NAME"
