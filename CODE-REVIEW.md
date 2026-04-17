@@ -45,7 +45,7 @@ Findings ordered by severity.
 
 ## HIGH
 
-### H1. No delivery idempotency — retries can double-send
+### H1. No delivery idempotency — retries can double-send -- ** FIXED ** 
 - **File:** [src/sender/email_sender.py](src/sender/email_sender.py); tests in [tests/test_sender.py:37-182](tests/test_sender.py)
 - **Problem:** `send_digest` logs each attempt to `delivery_log` but never consults prior rows for the same `run_id` or for a (recipient-group, issue_number, date) key. A GitHub Actions retry or a `PIPELINE_TIMEOUT` re-trigger can deliver the same digest twice.
 - **Fix:** Compute an idempotency key such as `sha256(run_id | issue_number | group | sorted_bcc_emails)` or simply `issue_number + group`; before calling AgentMail, check `delivery_log` for a prior `status='sent'` row. If found, short-circuit with `return True` and log `idempotent_skip`. Also consider an idempotency header to AgentMail if supported.
