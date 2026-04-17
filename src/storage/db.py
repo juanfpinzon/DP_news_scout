@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import sqlite3
-from contextlib import closing
+from collections.abc import Iterator
+from contextlib import closing, contextmanager
 from dataclasses import asdict, dataclass, fields
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -95,7 +96,6 @@ def initialize_database(database_path: str) -> None:
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_delivery_log_run_id ON delivery_log (run_id)"
         )
-        connection.commit()
 
 
 def save_articles(database_path: str, articles: list[ArticleRecord | dict[str, Any]]) -> int:
@@ -127,7 +127,6 @@ def save_articles(database_path: str, articles: list[ArticleRecord | dict[str, A
                 """,
                 rows,
             )
-        connection.commit()
     return len(normalized_articles)
 
 
@@ -225,7 +224,6 @@ def log_run(
                     payload["error_log"],
                 ),
             )
-            connection.commit()
             return int(cursor.lastrowid)
 
         connection.execute(
@@ -249,7 +247,6 @@ def log_run(
                 run_id,
             ),
         )
-        connection.commit()
         return run_id
 
 
@@ -271,7 +268,6 @@ def log_delivery(database_path: str, delivery: DeliveryRecord | dict[str, Any]) 
                 payload["error"],
             ),
         )
-        connection.commit()
         return int(cursor.lastrowid)
 
 
@@ -279,12 +275,20 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _connect_database(database_path: str) -> sqlite3.Connection:
+@contextmanager
+def _connect_database(database_path: str) -> Iterator[sqlite3.Connection]:
     db_path = Path(database_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(db_path)
     connection.execute("PRAGMA foreign_keys = ON")
-    return connection
+    try:
+        yield connection
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
 
 
 def _ensure_articles_schema(connection: sqlite3.Connection) -> None:
