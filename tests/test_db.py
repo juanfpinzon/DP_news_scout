@@ -8,6 +8,7 @@ from src.storage.db import (
     DeliveryRecord,
     PipelineRunRecord,
     get_recent_urls,
+    has_successful_delivery,
     initialize_database,
     load_articles,
     log_delivery,
@@ -114,3 +115,38 @@ def test_get_recent_urls_can_use_injected_now(tmp_path) -> None:
         days=7,
         now=datetime.fromisoformat("2026-04-17T09:00:00+00:00"),
     ) == {"https://example.com/future-story"}
+
+
+def test_has_successful_delivery_only_matches_sent_rows(tmp_path) -> None:
+    database_path = str(tmp_path / "dpns.db")
+    run_id = log_run(
+        database_path,
+        PipelineRunRecord(
+            started_at=utc_now_iso(),
+            status="started",
+        ),
+    )
+
+    log_delivery(
+        database_path,
+        DeliveryRecord(
+            run_id=run_id,
+            sent_at=utc_now_iso(),
+            recipient_count=3,
+            status="failed",
+            idempotency_key="digest-key",
+        ),
+    )
+    assert has_successful_delivery(database_path, idempotency_key="digest-key") is False
+
+    log_delivery(
+        database_path,
+        DeliveryRecord(
+            run_id=run_id,
+            sent_at=utc_now_iso(),
+            recipient_count=3,
+            status="sent",
+            idempotency_key="digest-key",
+        ),
+    )
+    assert has_successful_delivery(database_path, idempotency_key="digest-key") is True

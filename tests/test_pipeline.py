@@ -89,7 +89,7 @@ def test_run_pipeline_happy_path_sends_digest_and_updates_run(tmp_path, monkeypa
     assert sent["html"] == "<html>digest</html>"
     assert sent["plaintext"] == "digest"
     assert sent["subject"] == "Digital Procurement News Scout | April 4, 2026 | Issue #1"
-    assert sent["kwargs"] == {"config": config, "run_id": 1}
+    assert sent["kwargs"] == {"config": config, "run_id": 1, "issue_number": 1}
 
     with sqlite3.connect(config.settings.database_path) as connection:
         row = connection.execute(
