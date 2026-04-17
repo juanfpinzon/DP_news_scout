@@ -23,7 +23,7 @@ Findings ordered by severity.
 - **Problem:** Only the Brave-returned `candidate_url` is validated against `config/search_fallback_allowlist.yaml`. The `managed_async_client` has `follow_redirects=True`, so if an allowlisted publisher 301s to an arbitrary host (intentional or compromised), the final response is accepted and scraped. This is both an SSRF-ish exfiltration vector and a trust bypass.
 - **Fix:** Disable auto-redirects for fallback fetches, capture the `Location` header, re-validate the target host against `resolve_allowed_publisher`, and cap redirect chain length (≤2). Alternatively, inspect `response.history` after the fetch and drop the result if any hop left the allowlist.
 
-### C3. SQLite connection leak across every pipeline stage
+### C3. SQLite connection leak across every pipeline stage -- ** FIXED ** 
 - **File:** [src/storage/db.py](src/storage/db.py) — all public helpers: `save_articles`, `get_recent_urls`, `load_articles`, `log_run`, `log_delivery`, `_connect_database`
 - **Problem:** `sqlite3.Connection` used as a context manager commits/rolls back but does **not** close the connection. Every helper opens a new one. Long-running CI and future long-lived processes will leak file descriptors and WAL handles; pytest sessions can flake on Windows when the DB file is unlinked.
 - **Fix:** Use `contextlib.closing` around `_connect_database(...)` or return a context manager that both commits and closes.
