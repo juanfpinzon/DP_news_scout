@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
 import yaml
@@ -32,6 +32,8 @@ SEARCH_FALLBACK_DISCOVERY_METHOD = "search_fallback"
 DEFAULT_AUTO_INCLUDE_CATEGORIES = ("trade_media", "mainstream", "global_news")
 BRAVE_SEARCH_RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 BRAVE_SEARCH_MAX_ATTEMPTS = 3
+SEARCH_FALLBACK_REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
+SEARCH_FALLBACK_MAX_REDIRECTS = 2
 
 
 class SearchFallbackError(RuntimeError):
@@ -68,6 +70,13 @@ class SearchFallbackDiagnostics:
     rejected_candidate_fetch_failed: int = 0
     rejected_stale: int = 0
     rejected_missing_title: int = 0
+
+
+@dataclass(slots=True, frozen=True)
+class _CandidateResponse:
+    response: httpx.Response
+    publisher: SearchFallbackPublisher
+    url: str
 
 
 async def search_fallback_articles(
@@ -163,6 +172,8 @@ async def search_fallback_articles(
             source=source,
             candidate=item,
             publisher=publisher,
+            allowlist=allowlist,
+            source_domain=source_domain,
             client=client,
             settings=settings,
             rate_limiter=rate_limiter,
@@ -180,9 +191,13 @@ async def search_fallback_articles(
                     reason=rejection_reason,
                 )
             continue
+        if article.url in seen_urls:
+            diagnostics.skipped_duplicate_urls += 1
+            continue
 
         accepted.append(article)
         seen_urls.add(candidate_url)
+        seen_urls.add(article.url)
 
     diagnostics.accepted_articles = len(accepted)
     summary = _format_search_fallback_summary(diagnostics)
@@ -353,6 +368,8 @@ async def _build_article_from_candidate(
     source: Source,
     candidate: dict[str, Any],
     publisher: SearchFallbackPublisher,
+    allowlist: SearchFallbackAllowlist,
+    source_domain: str,
     client: httpx.AsyncClient,
     settings: Settings,
     rate_limiter: DomainRateLimiter | None,
@@ -361,26 +378,23 @@ async def _build_article_from_candidate(
     now: datetime,
 ) -> tuple[RawArticle | None, str | None]:
     candidate_url = str(candidate["url"]).strip()
-    request_headers = build_request_headers(source.name, candidate_url)
+    candidate_response, rejection_reason = await _fetch_candidate_response(
+        source=source,
+        candidate_url=candidate_url,
+        publisher=publisher,
+        allowlist=allowlist,
+        source_domain=source_domain,
+        client=client,
+        rate_limiter=rate_limiter,
+        robots_policy=robots_policy,
+        allow_robots_network_fallback=allow_robots_network_fallback,
+    )
+    if candidate_response is None:
+        return None, rejection_reason
 
-    if robots_policy is not None:
-        allowed = await robots_policy.allows(
-            client=client,
-            url=candidate_url,
-            user_agent=request_headers["User-Agent"],
-            allow_network_fallback=allow_robots_network_fallback,
-        )
-        if not allowed:
-            return None, "robots_disallowed"
-
-    if rate_limiter is not None:
-        await rate_limiter.wait(candidate_url)
-
-    try:
-        response = await client.get(candidate_url, headers=request_headers)
-        response.raise_for_status()
-    except httpx.HTTPError:
-        return None, "candidate_fetch_failed"
+    response = candidate_response.response
+    final_url = candidate_response.url
+    final_publisher = candidate_response.publisher
 
     soup = BeautifulSoup(response.text, "html.parser")
     published_at = _extract_document_date(soup) or parse_datetime(candidate.get("page_age"))
@@ -405,11 +419,11 @@ async def _build_article_from_candidate(
 
     return (
         RawArticle(
-            url=candidate_url,
+            url=final_url,
             title=title,
-            source=publisher.label,
-            source_url=f"https://{publisher.domain}/",
-            category=_publisher_category(publisher),
+            source=final_publisher.label,
+            source_url=f"https://{final_publisher.domain}/",
+            category=_publisher_category(final_publisher),
             published_at=published_at.isoformat() if published_at is not None else None,
             fetched_at=now.isoformat(),
             summary=summary,
@@ -419,6 +433,83 @@ async def _build_article_from_candidate(
         ),
         None,
     )
+
+
+async def _fetch_candidate_response(
+    *,
+    source: Source,
+    candidate_url: str,
+    publisher: SearchFallbackPublisher,
+    allowlist: SearchFallbackAllowlist,
+    source_domain: str,
+    client: httpx.AsyncClient,
+    rate_limiter: DomainRateLimiter | None,
+    robots_policy: RobotsPolicy | None,
+    allow_robots_network_fallback: bool,
+) -> tuple[_CandidateResponse | None, str | None]:
+    current_url = candidate_url
+    current_publisher = publisher
+    redirect_count = 0
+    request_headers = build_request_headers(source.name, candidate_url)
+
+    if rate_limiter is not None:
+        await rate_limiter.wait(candidate_url)
+
+    while True:
+        if robots_policy is not None:
+            allowed = await robots_policy.allows(
+                client=client,
+                url=current_url,
+                user_agent=request_headers["User-Agent"],
+                allow_network_fallback=allow_robots_network_fallback,
+            )
+            if not allowed:
+                return None, "robots_disallowed"
+
+        try:
+            response = await client.get(
+                current_url,
+                headers=request_headers,
+                follow_redirects=False,
+            )
+        except httpx.HTTPError:
+            return None, "candidate_fetch_failed"
+
+        if response.status_code in SEARCH_FALLBACK_REDIRECT_STATUS_CODES:
+            if redirect_count >= SEARCH_FALLBACK_MAX_REDIRECTS:
+                return None, "candidate_fetch_failed"
+
+            redirect_url = _resolve_redirect_url(response)
+            if redirect_url is None:
+                return None, "candidate_fetch_failed"
+
+            redirect_publisher = resolve_allowed_publisher(
+                redirect_url,
+                allowlist=allowlist,
+            )
+            if redirect_publisher is None:
+                return None, "domain_not_allowed"
+            if _hostname_matches_domain(redirect_url, source_domain):
+                return None, "source_domain_blocked"
+
+            current_url = redirect_url
+            current_publisher = redirect_publisher
+            redirect_count += 1
+            continue
+
+        try:
+            response.raise_for_status()
+        except httpx.HTTPError:
+            return None, "candidate_fetch_failed"
+
+        return (
+            _CandidateResponse(
+                response=response,
+                publisher=current_publisher,
+                url=str(response.url),
+            ),
+            None,
+        )
 
 
 def _extract_meta_content(
@@ -434,6 +525,13 @@ def _extract_meta_content(
         if content:
             return content
     return None
+
+
+def _resolve_redirect_url(response: httpx.Response) -> str | None:
+    location = clean_text(response.headers.get("Location"))
+    if not location:
+        return None
+    return urljoin(str(response.url), location)
 
 
 def _extract_document_date(soup: BeautifulSoup) -> datetime | None:
