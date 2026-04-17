@@ -18,7 +18,7 @@ Findings ordered by severity.
   # allows(): default to False when parser is None unless we recorded "missing"
   ```
 
-### C2. Search-fallback allowlist bypassed by HTTP redirects
+### C2. Search-fallback allowlist bypassed by HTTP redirects -- ** FIXED ** 
 - **File:** [src/fetcher/search_fallback.py](src/fetcher/search_fallback.py); shared client in [src/fetcher/common.py:157](src/fetcher/common.py)
 - **Problem:** Only the Brave-returned `candidate_url` is validated against `config/search_fallback_allowlist.yaml`. The `managed_async_client` has `follow_redirects=True`, so if an allowlisted publisher 301s to an arbitrary host (intentional or compromised), the final response is accepted and scraped. This is both an SSRF-ish exfiltration vector and a trust bypass.
 - **Fix:** Disable auto-redirects for fallback fetches, capture the `Location` header, re-validate the target host against `resolve_allowed_publisher`, and cap redirect chain length (≤2). Alternatively, inspect `response.history` after the fetch and drop the result if any hop left the allowlist.
