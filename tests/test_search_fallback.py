@@ -225,6 +225,98 @@ def test_search_fallback_articles_returns_allowlisted_article(monkeypatch) -> No
     assert articles[0].category == "mainstream"
 
 
+def test_search_fallback_articles_sanitizes_and_truncates_external_fields(monkeypatch) -> None:
+    now = datetime(2026, 4, 5, 9, 0, tzinfo=timezone.utc)
+    monkeypatch.setenv("BRAVE_SEARCH_API_KEY", "brave-key")
+    monkeypatch.setattr(
+        "src.fetcher.search_fallback.load_effective_search_allowlist",
+        lambda: SearchFallbackAllowlist(
+            publishers={
+                "reuters.com": SearchFallbackPublisher(
+                    domain="reuters.com",
+                    label="Reuters",
+                    group="mainstream",
+                    active=True,
+                )
+            },
+            deny_domains=set(),
+            auto_include_source_categories=(),
+        ),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "api.search.brave.com":
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {
+                            "url": "https://www.reuters.com/world/europe/example-story/",
+                            "title": "Recovered headline",
+                            "description": ("D" * 450) + " PROMPT_INJECTION",
+                        }
+                    ]
+                },
+            )
+        if request.url.host == "www.reuters.com" and request.url.path == "/robots.txt":
+            return httpx.Response(200, text="User-agent: *\nAllow: /\n")
+        if request.url.host == "www.reuters.com":
+            return httpx.Response(
+                200,
+                text=dedent(
+                    """
+                    <html>
+                      <head>
+                        <title>Recovered headline</title>
+                        <meta property="article:published_time" content="2026-04-04T07:00:00Z">
+                        <meta name="author" content="Reuters Staff">
+                      </head>
+                      <body><article>Story body</article></body>
+                    </html>
+                    """
+                ).strip(),
+            )
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    source = Source(
+        name="SAP Ariba",
+        url="https://news.sap.com/tags/sap-ariba/",
+        tier=2,
+        method="scrape",
+        active=False,
+        category="vendor",
+        selectors={"article": "article", "title": "h2", "link": "a[href]", "date": "time"},
+        fallback_search=SearchFallbackConfig(
+            configured=True,
+            enabled=True,
+            include_when_inactive=True,
+            query="\"SAP Ariba\" procurement",
+            max_results=2,
+        ),
+    )
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    try:
+        articles = asyncio.run(
+            search_fallback_articles(
+                source,
+                client=client,
+                settings=_settings(),
+                rate_limiter=DomainRateLimiter(0),
+                robots_policy=RobotsPolicy(),
+                allow_robots_network_fallback=False,
+                now=now,
+            )
+        )
+    finally:
+        asyncio.run(client.aclose())
+
+    assert len(articles) == 1
+    assert articles[0].summary is not None
+    assert "PROMPT_INJECTION" not in articles[0].summary
+    assert len(articles[0].summary) <= 400
+
+
 def test_search_fallback_articles_rejects_redirects_to_non_allowlisted_domains(
     monkeypatch,
 ) -> None:

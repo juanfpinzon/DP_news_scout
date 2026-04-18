@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+import sqlite3
 import re
 
 import pytest
 
 from src import main as main_module
 from src.main import PipelineResult
+from src.fetcher.models import Source
 from src.utils.config import AppConfig, EnvConfig, RecipientConfig, Settings
 from src.utils.progress import build_stdout_progress_callback
 
@@ -94,6 +97,48 @@ def test_main_keeps_stdout_progress_disabled_outside_github_actions(
     main_module.main()
 
     assert captured["progress_callback"] is None
+
+
+def test_run_pipeline_marks_timeout_when_pipeline_exceeds_deadline(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _build_config(dry_run=False)
+    config.settings.database_path = str(tmp_path / "dpns.db")
+    config.settings.log_file = str(tmp_path / "dpns.log")
+    config.settings.pipeline_timeout = 0.01
+
+    monkeypatch.setattr(
+        main_module,
+        "load_source_registry",
+        lambda **_kwargs: [Source(name="Source A", url="https://example.com/a", tier=1, method="rss", active=True, category="procurement")],
+    )
+
+    async def never_finishes(**_kwargs):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(main_module, "_run_pipeline_async", never_finishes)
+    monkeypatch.setattr(
+        main_module,
+        "send_digest",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("send_digest should not be called")),
+    )
+
+    result = main_module.run_pipeline(config=config)
+
+    assert result.status == "timeout"
+    assert result.email_sent is False
+    assert result.error == "Pipeline timed out after 0.01 seconds"
+
+    with sqlite3.connect(config.settings.database_path) as connection:
+        row = connection.execute(
+            "SELECT status, completed_at, error_log FROM pipeline_runs WHERE id = 1"
+        ).fetchone()
+
+    assert row is not None
+    assert row[0] == "timeout"
+    assert row[1] is not None
+    assert row[2] == "Pipeline timed out after 0.01 seconds"
 
 
 def _build_config(*, dry_run: bool) -> AppConfig:

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 from dotenv import dotenv_values
@@ -13,9 +15,25 @@ from src.analyzer.relevance import ScoredArticle
 from src.fetcher import FetchSummary, load_source_registry as load_real_source_registry
 from src.fetcher.models import RawArticle, Source
 from src.main import run_pipeline
+from src.pipeline.finalization import (
+    PipelineResult,
+    finalize_pipeline_run,
+    log_pipeline_stage_failure,
+)
+from src.pipeline.global_stages import (
+    run_global_briefing_stage,
+    run_global_fetch_stage,
+    run_global_scoring_stage,
+)
+from src.pipeline.partition import (
+    merge_fetch_summaries,
+    partition_articles_by_category,
+    partition_sources_by_category,
+)
+from src.pipeline.persistence import persist_seen_articles
 from src.renderer.html_email import render_digest as render_html_digest
 from src.renderer.plaintext import render_plaintext as render_digest_plaintext
-from src.storage.db import ArticleRecord, get_recent_urls, save_articles
+from src.storage.db import ArticleRecord, get_recent_urls, initialize_database, save_articles
 from src.utils.config import (
     DEFAULT_ENV_FILE,
     AppConfig,
@@ -30,6 +48,20 @@ REAL_PIPELINE_SOURCE_NAMES = {
     "CPO Rising",
     "Hackett Group Procurement",
 }
+
+
+class DummyLogger:
+    def __init__(self) -> None:
+        self.records: list[tuple[str, dict[str, object]]] = []
+
+    def info(self, event: str, **kwargs) -> None:
+        self.records.append((event, kwargs))
+
+    def warning(self, event: str, **kwargs) -> None:
+        self.records.append((event, kwargs))
+
+    def error(self, event: str, **kwargs) -> None:
+        self.records.append((event, kwargs))
 
 
 def test_run_pipeline_happy_path_sends_digest_and_updates_run(tmp_path, monkeypatch) -> None:
@@ -312,6 +344,380 @@ def test_run_pipeline_routes_fetched_articles_by_article_category(tmp_path, monk
     assert scored_inputs["global_news_scoring.md"] == ["https://example.com/article-10"]
 
 
+def test_run_pipeline_shares_fetch_context_across_concurrent_tracks(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    config = _build_config(tmp_path=tmp_path, dry_run=True)
+    calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        "src.main.load_source_registry",
+        lambda **_kwargs: [
+            _make_source("Source A"),
+            _make_source("Reuters", category="global_news"),
+        ],
+    )
+
+    async def fake_fetch_all_sources_report(**kwargs):
+        calls.append(kwargs)
+        return _make_fetch_summary(
+            articles=[],
+            sources_attempted=len(kwargs["sources"]),
+            sources_succeeded=1,
+            sources_failed=0,
+            articles_found=0,
+        )
+
+    async def fake_score_articles(*_args, **_kwargs):
+        return []
+
+    async def fake_compose_digest(*_args, **_kwargs):
+        return _make_digest()
+
+    monkeypatch.setattr("src.main.fetch_all_sources_report", fake_fetch_all_sources_report)
+    monkeypatch.setattr("src.main.score_articles", fake_score_articles)
+    monkeypatch.setattr("src.main.compose_digest", fake_compose_digest)
+    monkeypatch.setattr("src.main.compose_global_briefing", lambda *_args, **_kwargs: _async_return([]))
+    monkeypatch.setattr("src.main.render_digest", lambda *_args, **_kwargs: "<html>digest</html>")
+    monkeypatch.setattr("src.main.render_plaintext", lambda *_args, **_kwargs: "digest")
+    monkeypatch.setattr("src.main.send_digest", lambda *_args, **_kwargs: True)
+
+    result = run_pipeline(
+        config=config,
+        now=datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
+    )
+
+    assert result.status == "success"
+    assert len(calls) == 2
+    assert calls[0]["client"] is calls[1]["client"]
+    assert calls[0]["rate_limiter"] is calls[1]["rate_limiter"]
+    assert calls[0]["robots_policy"] is calls[1]["robots_policy"]
+
+
+def test_pipeline_partition_helpers_route_and_merge_articles() -> None:
+    procurement_source = _make_source("Source A")
+    global_source = _make_source("Reuters", category="global_news")
+
+    procurement_sources, global_sources = partition_sources_by_category(
+        [procurement_source, global_source]
+    )
+    assert [source.name for source in procurement_sources] == ["Source A"]
+    assert [source.name for source in global_sources] == ["Reuters"]
+
+    procurement_articles, global_articles = partition_articles_by_category(
+        [
+            _make_raw_article(1, source="Source A"),
+            _make_raw_article(2, source="Reuters", category="global_news"),
+        ]
+    )
+    assert [article.url for article in procurement_articles] == ["https://example.com/article-1"]
+    assert [article.url for article in global_articles] == ["https://example.com/article-2"]
+
+    merged = merge_fetch_summaries(
+        _make_fetch_summary(
+            articles=[
+                RawArticle(
+                    url="https://example.com/article-1",
+                    title="Fallback article",
+                    source="Source A",
+                    source_url="https://example.com/feed.xml",
+                    category="procurement",
+                    discovery_method="search_fallback",
+                )
+            ],
+            sources_attempted=1,
+            sources_succeeded=1,
+            sources_failed=0,
+            articles_found=1,
+        ),
+        _make_fetch_summary(
+            articles=[
+                RawArticle(
+                    url="https://example.com/article-1",
+                    title="Global article",
+                    source="Reuters",
+                    source_url="https://example.com/feed.xml",
+                    category="global_news",
+                )
+            ],
+            sources_attempted=1,
+            sources_succeeded=1,
+            sources_failed=0,
+            articles_found=1,
+        ),
+    )
+
+    assert merged.sources_attempted == 2
+    assert merged.sources_succeeded == 2
+    assert merged.articles[0].title == "Global article"
+
+
+def test_run_pipeline_cleans_up_shared_fetch_context_on_timeout(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    config = _build_config(tmp_path=tmp_path, dry_run=True)
+    config.settings.pipeline_timeout = 0.01
+    state: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "src.main.load_source_registry",
+        lambda **_kwargs: [
+            _make_source("Source A"),
+            _make_source("Reuters", category="global_news"),
+        ],
+    )
+
+    class _FakeManagedClientContext:
+        def __init__(self) -> None:
+            self.client = object()
+
+        async def __aenter__(self) -> object:
+            state["entered"] = True
+            return self.client
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            state["exited"] = True
+            state["exit_type"] = exc_type.__name__ if exc_type is not None else None
+
+    monkeypatch.setattr(
+        "src.main.managed_async_client",
+        lambda *_args, **_kwargs: _FakeManagedClientContext(),
+    )
+
+    async def fake_fetch_all_sources_report(**kwargs):
+        state.setdefault("calls", []).append(kwargs)
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr("src.main.fetch_all_sources_report", fake_fetch_all_sources_report)
+    monkeypatch.setattr("src.main.send_digest", lambda *_args, **_kwargs: True)
+
+    result = run_pipeline(
+        config=config,
+        now=datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
+    )
+
+    assert result.status == "timeout"
+    assert state["entered"] is True
+    assert state["exited"] is True
+    assert state["exit_type"] == "CancelledError"
+    assert len(state["calls"]) == 2
+    assert state["calls"][0]["client"] is state["calls"][1]["client"]
+    assert state["calls"][0]["client"] is not None
+    assert state["calls"][0]["rate_limiter"] is state["calls"][1]["rate_limiter"]
+    assert state["calls"][0]["robots_policy"] is state["calls"][1]["robots_policy"]
+
+
+def test_finalize_pipeline_run_updates_database_and_returns_result(tmp_path) -> None:
+    database_path = str(tmp_path / "dpns.db")
+    initialize_database(database_path)
+    config = _build_config(tmp_path=tmp_path, dry_run=False)
+    logger = DummyLogger()
+
+    run_id = main_module.log_run(
+        database_path,
+        main_module.PipelineRunRecord(
+            started_at="2026-04-04T08:00:00+00:00",
+            status="started",
+            sources_fetched=0,
+        ),
+    )
+
+    result = finalize_pipeline_run(
+        config=config,
+        run_id=run_id,
+        issue_number=7,
+        started_at="2026-04-04T08:00:00+00:00",
+        subject="Subject",
+        sources_fetched=2,
+        articles_found=5,
+        relevant_articles=4,
+        articles_included=3,
+        email_sent=True,
+        dry_run=False,
+        status="success",
+        error=None,
+        logger=logger,
+    )
+
+    assert result == PipelineResult(
+        run_id=1,
+        issue_number=7,
+        status="success",
+        started_at="2026-04-04T08:00:00+00:00",
+        completed_at=result.completed_at,
+        sources_fetched=2,
+        articles_found=5,
+        relevant_articles=4,
+        articles_included=3,
+        email_sent=True,
+        subject="Subject",
+        dry_run=False,
+        error=None,
+    )
+    assert logger.records[-1][0] == "pipeline_completed"
+
+    with sqlite3.connect(database_path) as connection:
+        row = connection.execute(
+            "SELECT status, sources_fetched, articles_found, articles_included, error_log "
+            "FROM pipeline_runs WHERE id = ?",
+            (run_id,),
+        ).fetchone()
+
+    assert row == ("success", 2, 5, 3, None)
+
+
+def test_log_pipeline_stage_failure_records_error_context() -> None:
+    logger = DummyLogger()
+
+    log_pipeline_stage_failure(
+        logger=logger,
+        run_id=1,
+        issue_number=2,
+        stage="fetcher",
+        error="fetcher blew up",
+        exc=RuntimeError("boom"),
+        sources_attempted=3,
+    )
+
+    assert logger.records == [
+        (
+            "pipeline_stage_failed",
+            {
+                "run_id": 1,
+                "issue_number": 2,
+                "stage": "fetcher",
+                "error": "fetcher blew up",
+                "sources_attempted": 3,
+                "error_type": "RuntimeError",
+            },
+        )
+    ]
+
+
+def test_persist_seen_articles_marks_included_digest_items(tmp_path) -> None:
+    database_path = str(tmp_path / "dpns.db")
+    initialize_database(database_path)
+    logger = DummyLogger()
+    raw_articles = [
+        _make_raw_article(1, source="Source A"),
+        _make_raw_article(2, source="Source B"),
+    ]
+    scored_articles = [
+        _make_scored_article(1, source="Source A"),
+        _make_scored_article(2, source="Source B"),
+    ]
+
+    persist_seen_articles(
+        database_path=database_path,
+        raw_articles=raw_articles,
+        scored_articles=scored_articles,
+        digest=_make_digest(),
+        logger=logger,
+        run_id=1,
+        issue_number=3,
+    )
+
+    with sqlite3.connect(database_path) as connection:
+        rows = connection.execute(
+            "SELECT url, relevance_score, included_in_digest FROM articles ORDER BY url"
+        ).fetchall()
+
+    assert rows == [
+        ("https://example.com/article-1", 8.0, 1),
+        ("https://example.com/article-2", 8.0, 1),
+    ]
+    assert logger.records[-1][0] == "pipeline_articles_persisted"
+
+
+def test_run_global_fetch_stage_returns_empty_summary_on_error() -> None:
+    logger = DummyLogger()
+    progress_messages: list[str] = []
+
+    async def fake_fetch_all_sources_report(**_kwargs):
+        raise RuntimeError("fetch failed")
+
+    summary = asyncio.run(
+        run_global_fetch_stage(
+            sources=[_make_source("Reuters", category="global_news")],
+            settings=_build_config(tmp_path=Path("/tmp"), dry_run=True).settings,
+            database_path="data/test.db",
+            logger=logger,
+            run_id=1,
+            issue_number=2,
+            client=object(),
+            rate_limiter=object(),
+            robots_policy=object(),
+            now=datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
+            ignore_seen_db=False,
+            progress_callback=progress_messages.append,
+            fetch_all_sources_report_fn=fake_fetch_all_sources_report,
+            logger_factory=lambda *_args, **_kwargs: logger,
+        )
+    )
+
+    assert summary.sources_attempted == 1
+    assert summary.sources_failed == 1
+    assert progress_messages == [
+        "Global macro fetch failed; continuing without that section: fetch failed"
+    ]
+
+
+def test_run_global_scoring_stage_returns_empty_list_on_error() -> None:
+    logger = DummyLogger()
+    progress_messages: list[str] = []
+
+    async def fake_score_articles(*_args, **_kwargs):
+        raise RuntimeError("scoring failed")
+
+    scored = asyncio.run(
+        run_global_scoring_stage(
+            articles=[_make_raw_article(1, source="Reuters", category="global_news")],
+            settings=_build_config(tmp_path=Path("/tmp"), dry_run=True).settings,
+            logger=logger,
+            run_id=1,
+            issue_number=2,
+            progress_callback=progress_messages.append,
+            now=datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
+            score_articles_fn=fake_score_articles,
+            logger_factory=lambda *_args, **_kwargs: logger,
+        )
+    )
+
+    assert scored == []
+    assert progress_messages == [
+        "Global macro scoring failed; continuing without that section: scoring failed"
+    ]
+
+
+def test_run_global_briefing_stage_returns_empty_list_on_error() -> None:
+    logger = DummyLogger()
+    progress_messages: list[str] = []
+
+    async def fake_compose_global_briefing(*_args, **_kwargs):
+        raise RuntimeError("briefing failed")
+
+    briefing = asyncio.run(
+        run_global_briefing_stage(
+            articles=[_make_scored_article(1, source="Reuters", category="global_news")],
+            settings=_build_config(tmp_path=Path("/tmp"), dry_run=True).settings,
+            logger=logger,
+            run_id=1,
+            issue_number=2,
+            progress_callback=progress_messages.append,
+            now=datetime(2026, 4, 4, 8, 0, tzinfo=timezone.utc),
+            compose_global_briefing_fn=fake_compose_global_briefing,
+            logger_factory=lambda *_args, **_kwargs: logger,
+        )
+    )
+
+    assert briefing == []
+    assert progress_messages == [
+        "Global macro briefing composition failed; continuing without that section: briefing failed"
+    ]
+
+
 def test_run_pipeline_reuse_reconstructs_fallback_articles_from_publisher_source(
     tmp_path,
     monkeypatch,
@@ -576,6 +982,7 @@ def test_run_pipeline_passes_ignore_seen_db_to_fetcher(tmp_path, monkeypatch) ->
 
     assert result.status == "success"
     assert captured["use_database_seen_urls"] is False
+    assert captured["allow_robots_network_fallback"] is True
 
 
 def test_run_pipeline_ignores_progress_callback_failures(tmp_path, monkeypatch) -> None:
