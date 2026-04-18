@@ -1,6 +1,10 @@
 name: Weekly Digest
 
 on:
+  pull_request:
+    branches:
+      - main
+      - DEV
   workflow_dispatch:
     inputs:
       dry_run:
@@ -16,8 +20,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: dpns-weekly-digest
-  cancel-in-progress: false
+  # PR runs are isolated per branch and cancellable; production runs are serialised
+  group: dpns-${{ github.event_name == 'pull_request' && github.ref || 'production' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   run-digest:
@@ -33,7 +38,7 @@ jobs:
       FEEDBACK_SUBJECT: ${{ secrets.FEEDBACK_SUBJECT }}
       FEEDBACK_URL: ${{ secrets.FEEDBACK_URL }}
       LOG_LEVEL: ${{ vars.LOG_LEVEL || 'INFO' }}
-      DRY_RUN: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) || (github.event_name == 'repository_dispatch' && github.event.client_payload.dry_run == true) }}
+      DRY_RUN: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.dry_run) || (github.event_name == 'repository_dispatch' && github.event.client_payload.dry_run == true) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
