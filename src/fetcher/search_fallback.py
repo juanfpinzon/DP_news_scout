@@ -21,6 +21,7 @@ from src.fetcher.common import (
     is_recent_enough,
     parse_datetime,
 )
+from src.analyzer.shared import _sanitize_prompt_text
 from src.fetcher.models import RawArticle, Source
 from src.fetcher.registry import load_source_registry
 from src.utils.config import CONFIG_DIR, Settings
@@ -420,14 +421,14 @@ async def _build_article_from_candidate(
     return (
         RawArticle(
             url=final_url,
-            title=title,
+            title=_sanitize_prompt_text(title) or title,
             source=final_publisher.label,
             source_url=f"https://{final_publisher.domain}/",
             category=_publisher_category(final_publisher),
             published_at=published_at.isoformat() if published_at is not None else None,
             fetched_at=now.isoformat(),
-            summary=summary,
-            author=author,
+            summary=_sanitize_prompt_text(summary) or summary,
+            author=_sanitize_prompt_text(author) if author is not None else None,
             origin_source=source.name,
             discovery_method=SEARCH_FALLBACK_DISCOVERY_METHOD,
         ),
