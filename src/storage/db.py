@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import sqlite3
-from contextlib import closing
+from collections.abc import Iterator
+from contextlib import closing, contextmanager
 from dataclasses import asdict, dataclass, fields
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -40,6 +41,7 @@ class DeliveryRecord:
     recipient_count: int
     status: str
     error: str | None = None
+    idempotency_key: str | None = None
 
 
 def initialize_database(database_path: str) -> None:
@@ -84,18 +86,23 @@ def initialize_database(database_path: str) -> None:
                 sent_at TEXT NOT NULL,
                 recipient_count INTEGER NOT NULL,
                 status TEXT NOT NULL,
+                idempotency_key TEXT,
                 error TEXT,
                 FOREIGN KEY (run_id) REFERENCES pipeline_runs(id)
             )
             """
         )
+        _ensure_delivery_log_schema(connection)
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_articles_published_at ON articles (published_at)"
         )
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_delivery_log_run_id ON delivery_log (run_id)"
         )
-        connection.commit()
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_delivery_log_idempotency_sent "
+            "ON delivery_log (idempotency_key, status)"
+        )
 
 
 def save_articles(database_path: str, articles: list[ArticleRecord | dict[str, Any]]) -> int:
@@ -127,7 +134,6 @@ def save_articles(database_path: str, articles: list[ArticleRecord | dict[str, A
                 """,
                 rows,
             )
-        connection.commit()
     return len(normalized_articles)
 
 
@@ -225,7 +231,6 @@ def log_run(
                     payload["error_log"],
                 ),
             )
-            connection.commit()
             return int(cursor.lastrowid)
 
         connection.execute(
@@ -249,7 +254,6 @@ def log_run(
                 run_id,
             ),
         )
-        connection.commit()
         return run_id
 
 
@@ -260,31 +264,62 @@ def log_delivery(database_path: str, delivery: DeliveryRecord | dict[str, Any]) 
     with _connect_database(database_path) as connection:
         cursor = connection.execute(
             """
-            INSERT INTO delivery_log (run_id, sent_at, recipient_count, status, error)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO delivery_log (
+                run_id,
+                sent_at,
+                recipient_count,
+                status,
+                idempotency_key,
+                error
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
                 payload["run_id"],
                 payload["sent_at"],
                 payload["recipient_count"],
                 payload["status"],
+                payload["idempotency_key"],
                 payload["error"],
             ),
         )
-        connection.commit()
         return int(cursor.lastrowid)
+
+
+def has_successful_delivery(database_path: str, *, idempotency_key: str) -> bool:
+    initialize_database(database_path)
+    with _connect_database(database_path) as connection:
+        row = connection.execute(
+            """
+            SELECT 1
+            FROM delivery_log
+            WHERE idempotency_key = ?
+              AND status = 'sent'
+            LIMIT 1
+            """,
+            (idempotency_key,),
+        ).fetchone()
+    return row is not None
 
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _connect_database(database_path: str) -> sqlite3.Connection:
+@contextmanager
+def _connect_database(database_path: str) -> Iterator[sqlite3.Connection]:
     db_path = Path(database_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(db_path)
     connection.execute("PRAGMA foreign_keys = ON")
-    return connection
+    try:
+        yield connection
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
 
 
 def _ensure_articles_schema(connection: sqlite3.Connection) -> None:
@@ -296,6 +331,15 @@ def _ensure_articles_schema(connection: sqlite3.Connection) -> None:
         connection.execute("ALTER TABLE articles ADD COLUMN origin_source TEXT")
     if "discovery_method" not in existing_columns:
         connection.execute("ALTER TABLE articles ADD COLUMN discovery_method TEXT")
+
+
+def _ensure_delivery_log_schema(connection: sqlite3.Connection) -> None:
+    existing_columns = {
+        row[1]
+        for row in connection.execute("PRAGMA table_info(delivery_log)").fetchall()
+    }
+    if "idempotency_key" not in existing_columns:
+        connection.execute("ALTER TABLE delivery_log ADD COLUMN idempotency_key TEXT")
 
 
 def _normalize_article(article: ArticleRecord | dict[str, Any]) -> ArticleRecord:

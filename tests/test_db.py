@@ -3,11 +3,13 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime
 
+import src.storage.db as storage_db
 from src.storage.db import (
     ArticleRecord,
     DeliveryRecord,
     PipelineRunRecord,
     get_recent_urls,
+    has_successful_delivery,
     initialize_database,
     load_articles,
     log_delivery,
@@ -84,6 +86,61 @@ def test_initialize_database_creates_file(tmp_path) -> None:
     assert database_path.exists()
 
 
+def test_storage_helpers_close_sqlite_connections(tmp_path, monkeypatch) -> None:
+    database_path = str(tmp_path / "dpns.db")
+    original_connect = sqlite3.connect
+    opened_connections = []
+    closed_connections = []
+
+    class TrackingConnection(sqlite3.Connection):
+        def close(self) -> None:
+            closed_connections.append(self)
+            super().close()
+
+    def tracking_connect(*args, **kwargs):
+        connection = original_connect(*args, **kwargs, factory=TrackingConnection)
+        opened_connections.append(connection)
+        return connection
+
+    monkeypatch.setattr(storage_db.sqlite3, "connect", tracking_connect)
+
+    initialize_database(database_path)
+    save_articles(
+        database_path,
+        [
+            ArticleRecord(
+                url="https://example.com/story-1",
+                title="Story 1",
+                source="Example",
+                fetched_at=utc_now_iso(),
+            )
+        ],
+    )
+    get_recent_urls(database_path)
+    load_articles(database_path)
+
+    run_id = log_run(
+        database_path,
+        PipelineRunRecord(started_at=utc_now_iso(), status="started"),
+    )
+    log_delivery(
+        database_path,
+        DeliveryRecord(
+            run_id=run_id,
+            sent_at=utc_now_iso(),
+            recipient_count=1,
+            status="sent",
+        ),
+    )
+
+    assert opened_connections
+    assert len(closed_connections) == len(opened_connections)
+    assert all(
+        any(closed is opened for closed in closed_connections)
+        for opened in opened_connections
+    )
+
+
 def test_get_recent_urls_can_use_injected_now(tmp_path) -> None:
     database_path = str(tmp_path / "dpns.db")
     save_articles(
@@ -114,3 +171,38 @@ def test_get_recent_urls_can_use_injected_now(tmp_path) -> None:
         days=7,
         now=datetime.fromisoformat("2026-04-17T09:00:00+00:00"),
     ) == {"https://example.com/future-story"}
+
+
+def test_has_successful_delivery_only_matches_sent_rows(tmp_path) -> None:
+    database_path = str(tmp_path / "dpns.db")
+    run_id = log_run(
+        database_path,
+        PipelineRunRecord(
+            started_at=utc_now_iso(),
+            status="started",
+        ),
+    )
+
+    log_delivery(
+        database_path,
+        DeliveryRecord(
+            run_id=run_id,
+            sent_at=utc_now_iso(),
+            recipient_count=3,
+            status="failed",
+            idempotency_key="digest-key",
+        ),
+    )
+    assert has_successful_delivery(database_path, idempotency_key="digest-key") is False
+
+    log_delivery(
+        database_path,
+        DeliveryRecord(
+            run_id=run_id,
+            sent_at=utc_now_iso(),
+            recipient_count=3,
+            status="sent",
+            idempotency_key="digest-key",
+        ),
+    )
+    assert has_successful_delivery(database_path, idempotency_key="digest-key") is True

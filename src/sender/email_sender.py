@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import time
 from collections.abc import Callable
 from typing import Any
@@ -9,7 +10,7 @@ try:
 except ImportError:  # pragma: no cover - dependency is declared in pyproject
     AgentMail = None
 
-from src.storage.db import DeliveryRecord, log_delivery, utc_now_iso
+from src.storage.db import DeliveryRecord, has_successful_delivery, log_delivery, utc_now_iso
 from src.utils.config import AppConfig, RecipientConfig, load_config
 from src.utils.logging import get_logger
 from src.utils.progress import emit_progress
@@ -25,6 +26,7 @@ def send_digest(
     *,
     config: AppConfig | None = None,
     run_id: int | None = None,
+    issue_number: int | None = None,
     group: str | None = None,
     client: Any | None = None,
     sleep_fn: Callable[[float], None] = time.sleep,
@@ -38,6 +40,12 @@ def send_digest(
     recipient_emails = [recipient.email for recipient in recipients]
     recipient_count = len(recipient_emails)
     active_group = group or config.default_recipient_group
+    idempotency_key = _build_idempotency_key(
+        issue_number=issue_number,
+        subject=subject,
+        recipient_group=active_group,
+        recipient_emails=recipient_emails,
+    )
 
     if recipient_count == 0:
         message = f"No recipients configured for group '{active_group}'"
@@ -48,9 +56,41 @@ def send_digest(
             subject=subject,
             reason=message,
         )
-        _record_delivery(config=config, run_id=run_id, recipient_count=0, status="skipped", error=message)
+        _record_delivery(
+            config=config,
+            run_id=run_id,
+            recipient_count=0,
+            status="skipped",
+            error=message,
+            idempotency_key=idempotency_key,
+        )
         emit_progress(progress_callback, message)
         return False
+
+    if has_successful_delivery(
+        config.settings.database_path,
+        idempotency_key=idempotency_key,
+    ):
+        logger.info(
+            "email_delivery_idempotent_skip",
+            recipient_group=active_group,
+            recipient_count=recipient_count,
+            subject=subject,
+            idempotency_key=idempotency_key,
+        )
+        _record_delivery(
+            config=config,
+            run_id=run_id,
+            recipient_count=recipient_count,
+            status="idempotent_skip",
+            error=None,
+            idempotency_key=idempotency_key,
+        )
+        emit_progress(
+            progress_callback,
+            "Email delivery skipped because this digest was already sent.",
+        )
+        return True
 
     if client is None:
         if AgentMail is None:
@@ -93,6 +133,7 @@ def send_digest(
                 recipient_count=recipient_count,
                 status="sent",
                 error=None,
+                idempotency_key=idempotency_key,
             )
             emit_progress(
                 progress_callback,
@@ -135,6 +176,7 @@ def send_digest(
         recipient_count=recipient_count,
         status="failed",
         error=last_error,
+        idempotency_key=idempotency_key,
     )
     emit_progress(
         progress_callback,
@@ -172,6 +214,28 @@ def _deduplicate_recipients(recipients: list[RecipientConfig]) -> list[Recipient
     return unique_recipients
 
 
+def _build_idempotency_key(
+    *,
+    issue_number: int | None,
+    subject: str,
+    recipient_group: str,
+    recipient_emails: list[str],
+) -> str:
+    digest_identity = (
+        f"issue:{issue_number}"
+        if issue_number is not None
+        else f"subject:{subject.strip()}"
+    )
+    digest_source = "|".join(
+        [
+            digest_identity,
+            recipient_group.strip().lower(),
+            ",".join(sorted(email.strip().lower() for email in recipient_emails)),
+        ]
+    )
+    return hashlib.sha256(digest_source.encode("utf-8")).hexdigest()
+
+
 def _record_delivery(
     *,
     config: AppConfig,
@@ -179,6 +243,7 @@ def _record_delivery(
     recipient_count: int,
     status: str,
     error: str | None,
+    idempotency_key: str | None,
 ) -> None:
     if run_id is None:
         return
@@ -191,5 +256,6 @@ def _record_delivery(
             recipient_count=recipient_count,
             status=status,
             error=error,
+            idempotency_key=idempotency_key,
         ),
     )

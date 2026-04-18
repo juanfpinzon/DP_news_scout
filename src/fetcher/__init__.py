@@ -45,6 +45,9 @@ async def fetch_all_sources(
     database_path: str | None = None,
     logger=None,
     client: httpx.AsyncClient | None = None,
+    rate_limiter: DomainRateLimiter | None = None,
+    robots_policy: RobotsPolicy | None = None,
+    allow_robots_network_fallback: bool | None = None,
     now: datetime | None = None,
     persist_to_db: bool = True,
     use_database_seen_urls: bool = True,
@@ -56,6 +59,9 @@ async def fetch_all_sources(
         database_path=database_path,
         logger=logger,
         client=client,
+        rate_limiter=rate_limiter,
+        robots_policy=robots_policy,
+        allow_robots_network_fallback=allow_robots_network_fallback,
         now=now,
         persist_to_db=persist_to_db,
         use_database_seen_urls=use_database_seen_urls,
@@ -71,6 +77,9 @@ async def fetch_all_sources_report(
     database_path: str | None = None,
     logger=None,
     client: httpx.AsyncClient | None = None,
+    rate_limiter: DomainRateLimiter | None = None,
+    robots_policy: RobotsPolicy | None = None,
+    allow_robots_network_fallback: bool | None = None,
     now: datetime | None = None,
     persist_to_db: bool = True,
     use_database_seen_urls: bool = True,
@@ -90,9 +99,10 @@ async def fetch_all_sources_report(
         logger = get_logger(__name__, pipeline_stage="fetcher")
 
     semaphore = asyncio.Semaphore(settings.fetch_concurrency)
-    rate_limiter = DomainRateLimiter(settings.rate_limit_seconds)
-    robots_policy = RobotsPolicy()
-    allow_robots_network_fallback = client is None
+    rate_limiter = rate_limiter or DomainRateLimiter(settings.rate_limit_seconds)
+    robots_policy = robots_policy or RobotsPolicy()
+    if allow_robots_network_fallback is None:
+        allow_robots_network_fallback = client is None
 
     async with managed_async_client(client, timeout_seconds=settings.request_timeout_seconds) as active_client:
         results = await asyncio.gather(

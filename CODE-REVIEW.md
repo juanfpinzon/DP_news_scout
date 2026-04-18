@@ -18,12 +18,12 @@ Findings ordered by severity.
   # allows(): default to False when parser is None unless we recorded "missing"
   ```
 
-### C2. Search-fallback allowlist bypassed by HTTP redirects
+### C2. Search-fallback allowlist bypassed by HTTP redirects -- ** FIXED ** 
 - **File:** [src/fetcher/search_fallback.py](src/fetcher/search_fallback.py); shared client in [src/fetcher/common.py:157](src/fetcher/common.py)
 - **Problem:** Only the Brave-returned `candidate_url` is validated against `config/search_fallback_allowlist.yaml`. The `managed_async_client` has `follow_redirects=True`, so if an allowlisted publisher 301s to an arbitrary host (intentional or compromised), the final response is accepted and scraped. This is both an SSRF-ish exfiltration vector and a trust bypass.
 - **Fix:** Disable auto-redirects for fallback fetches, capture the `Location` header, re-validate the target host against `resolve_allowed_publisher`, and cap redirect chain length (≤2). Alternatively, inspect `response.history` after the fetch and drop the result if any hop left the allowlist.
 
-### C3. SQLite connection leak across every pipeline stage
+### C3. SQLite connection leak across every pipeline stage -- ** FIXED ** 
 - **File:** [src/storage/db.py](src/storage/db.py) — all public helpers: `save_articles`, `get_recent_urls`, `load_articles`, `log_run`, `log_delivery`, `_connect_database`
 - **Problem:** `sqlite3.Connection` used as a context manager commits/rolls back but does **not** close the connection. Every helper opens a new one. Long-running CI and future long-lived processes will leak file descriptors and WAL handles; pytest sessions can flake on Windows when the DB file is unlinked.
 - **Fix:** Use `contextlib.closing` around `_connect_database(...)` or return a context manager that both commits and closes.
@@ -45,7 +45,7 @@ Findings ordered by severity.
 
 ## HIGH
 
-### H1. No delivery idempotency — retries can double-send
+### H1. No delivery idempotency — retries can double-send -- ** FIXED ** 
 - **File:** [src/sender/email_sender.py](src/sender/email_sender.py); tests in [tests/test_sender.py:37-182](tests/test_sender.py)
 - **Problem:** `send_digest` logs each attempt to `delivery_log` but never consults prior rows for the same `run_id` or for a (recipient-group, issue_number, date) key. A GitHub Actions retry or a `PIPELINE_TIMEOUT` re-trigger can deliver the same digest twice.
 - **Fix:** Compute an idempotency key such as `sha256(run_id | issue_number | group | sorted_bcc_emails)` or simply `issue_number + group`; before calling AgentMail, check `delivery_log` for a prior `status='sent'` row. If found, short-circuit with `return True` and log `idempotent_skip`. Also consider an idempotency header to AgentMail if supported.
