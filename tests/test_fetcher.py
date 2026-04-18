@@ -241,6 +241,20 @@ def test_normalize_url_removes_fragment_default_port_and_sorts_query() -> None:
     assert normalized == "https://example.com/story?a=1&b=2"
 
 
+def test_normalize_url_lowercases_path_and_strips_default_index_pages() -> None:
+    assert normalize_url("https://example.com/NEWS/") == "https://example.com/news"
+    assert normalize_url("https://example.com/News/Index.html") == "https://example.com/news"
+    assert normalize_url("https://example.com/News/Index.htm#top") == "https://example.com/news"
+
+
+def test_normalize_url_preserves_tracking_cleanup_with_path_canonicalization() -> None:
+    normalized = normalize_url(
+        "https://www.example.com/Story/Index.html?utm_source=rss&keep=yes#comments"
+    )
+
+    assert normalized == "https://example.com/story?keep=yes"
+
+
 def test_deduplicate_articles_filters_recent_and_batch_duplicates() -> None:
     article_one = RawArticle(
         url="https://www.example.com/story/?utm_source=rss",

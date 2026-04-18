@@ -41,7 +41,12 @@ def normalize_url(url: str) -> str:
         if key.casefold() not in TRACKING_PARAMS
         and not key.casefold().startswith(TRACKING_PREFIXES)
     ]
-    normalized_path = parsed.path.rstrip("/") or "/"
+    normalized_path = parsed.path.lower().rstrip("/")
+    for suffix in ("/index.html", "/index.htm"):
+        if normalized_path.endswith(suffix):
+            normalized_path = normalized_path[: -len(suffix)]
+            break
+    normalized_path = normalized_path or "/"
 
     return urlunparse(
         (
