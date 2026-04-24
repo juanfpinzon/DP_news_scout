@@ -54,14 +54,14 @@ if [ $? != 0 ]; then
     CODEX_PROMPT="You are the Lead Engineer in a Git Worktree for branch: $NEW_BRANCH (base: $BASE_BRANCH). Your partner is Claude (in the right pane). Focus strictly on writing code. Claude handles Git. Do nothing for now, await further instructions."
     tmux select-pane -t 0
     tmux send-keys "codex" Enter
-    sleep 2
+    sleep 5
     tmux send-keys "$CODEX_PROMPT" Enter
 
     # PANE 1: PLANNER & REVIEWER (CLAUDE)
     CLAUDE_PROMPT="You are the Lead Planner/Reviewer in a Git Worktree for branch: $NEW_BRANCH (base: $BASE_BRANCH). Codex (left pane) is the Engineer. You review changes and handle all 'git add/commit' operations. Do nothing for now, await further instructions."
     tmux select-pane -t 1
     tmux send-keys "claude" Enter
-    sleep 2
+    sleep 5
     tmux send-keys "$CLAUDE_PROMPT" Enter
 fi
 
