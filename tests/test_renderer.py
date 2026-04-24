@@ -236,10 +236,27 @@ class TestRenderDigest:
 
     def test_header_uses_nested_right_aligned_issue_column(self) -> None:
         html = render_digest(_make_full_digest(), issue_number=1, date="April 4, 2026")
-        assert "Nested two-column table is more reliable in Gmail than an empty spacer cell" in html
-        assert 'width="172"' in html
-        assert "table-layout:fixed" in html
+        header_idx = html.index("Proportional columns keep Outlook")
+        header_html = html[max(0, header_idx - 800): header_idx + 800]
+
+        assert "Proportional columns keep Outlook from compressing the title" in html
+        assert 'width="32%"' in header_html
+        assert 'width="172"' not in header_html
         assert '<table role="presentation" align="right"' in html
+
+    def test_header_masthead_has_outlook_safe_small_screen_widths(self) -> None:
+        html = render_digest(_make_full_digest(), issue_number=1, date="April 4, 2026")
+        masthead_idx = html.index("News")
+        masthead_html = html[max(0, masthead_idx - 900): masthead_idx + 900]
+
+        assert 'width="68%"' in masthead_html
+        assert 'width="32%"' in masthead_html
+        assert 'width="172"' not in masthead_html
+        assert "table-layout:fixed" not in masthead_html
+        assert ">News</span> <span" in masthead_html
+        assert "News&nbsp;Scout" not in masthead_html
+        assert "News\xa0Scout" not in masthead_html
+        assert "white-space:nowrap" in masthead_html
 
     def test_footer_uses_centered_inner_table(self) -> None:
         html = render_digest(_make_full_digest(), issue_number=1, date="April 4, 2026")

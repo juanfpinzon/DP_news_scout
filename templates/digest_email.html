@@ -28,6 +28,8 @@
       .stack-column { display: block !important; width: 100% !important; }
       .mobile-padding { padding-left: 20px !important; padding-right: 20px !important; }
       .mobile-body { font-size: 15px !important; line-height: 1.65 !important; }
+      .masthead-title { font-size: 30px !important; line-height: 1.15 !important; }
+      .header-issue { padding-left: 0 !important; padding-top: 14px !important; }
       .issue-num { font-size: 44px !important; }
     }
   </style>
@@ -63,21 +65,21 @@
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <td class="mobile-padding" style="padding:26px 32px 24px;">
-                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;table-layout:fixed;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;">
                       <tr>
-                        <td valign="middle" width="100%" class="stack-column">
+                        <td valign="middle" width="68%" class="header-brand stack-column" style="width:68%;">
                           <p style="margin:0 0 7px 0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;font-weight:bold;color:#2d8b8b;letter-spacing:3px;text-transform:uppercase;">
                             PepsiCo Digital Procurement
                           </p>
-                          <p style="margin:0 0 11px 0;font-family:Georgia,'Times New Roman',serif;font-size:36px;font-weight:bold;color:#f1faee;line-height:1.1;letter-spacing:1px;">
-                            News&nbsp;Scout
+                          <p class="masthead-title" style="margin:0 0 11px 0;font-family:Georgia,'Times New Roman',serif;font-size:32px;font-weight:bold;color:#f1faee;line-height:1.1;letter-spacing:1px;">
+                            <span style="white-space:nowrap;">News</span> <span style="white-space:nowrap;">Scout</span>
                           </p>
                           <p style="margin:0;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:11px;color:#5a7d9a;letter-spacing:0.3px;">
                             {{ date }}&nbsp;&nbsp;&middot;&nbsp;&nbsp;{{ source_count_label }}
                           </p>
                         </td>
-                        <!-- Nested two-column table is more reliable in Gmail than an empty spacer cell -->
-                        <td valign="middle" align="right" width="172" class="stack-column" style="padding-left:20px;white-space:nowrap;text-align:right;">
+                        <!-- Proportional columns keep Outlook from compressing the title in narrow reading panes. -->
+                        <td valign="middle" align="right" width="32%" class="header-issue stack-column" style="width:32%;padding-left:18px;white-space:nowrap;text-align:right;">
                           <table role="presentation" align="right" cellpadding="0" cellspacing="0" border="0">
                             <tr>
                               <td align="right" style="text-align:right;">
