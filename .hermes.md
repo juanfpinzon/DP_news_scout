@@ -262,6 +262,20 @@ chore: description
 
 Task IDs reference `PLAN.md` (e.g., `[2.1.2]` = Task 2.1.2 RSS parser).
 
+## Linear Conventions
+
+When creating Linear issues, every agent tags its identity in the title:
+
+| Agent | Prefix |
+|-------|--------|
+| Hermes | 🤖 Hermes — |
+| Claude Code | 🟣 Claude — |
+| Codex | ⚡ Codex — |
+
+- Use an em-dash (`—`) between the prefix and description.
+- **Never** include the Linear ID (e.g. HER-123) in the title — it's already visible in the UI.
+- Descriptions should be concise and human-scannable.
+
 ## PRD Requirement IDs
 
 Reference these IDs when building or reviewing features:
