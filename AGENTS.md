@@ -57,9 +57,9 @@ Entry point: `python -m src.main`
 
 ```text
 dpns/
-├── AGENTS.md                   # Shared agent brief
-├── CLAUDE.md                   # Shared agent brief
-├── .hermes.md                  # Shared agent brief
+├── AGENTS.md                   # Canonical agent context (edit here)
+├── CLAUDE.md                   # → symlink to AGENTS.md
+├── .hermes.md                  # → symlink to AGENTS.md
 ├── DESIGN.md                   # Visual / UX design decisions
 ├── PRD.md                      # Product requirements
 ├── PLAN.md                     # Implementation plan
@@ -306,7 +306,7 @@ Reference these IDs when building or reviewing features:
 ## Cross-Project Context
 
 For durable cross-project learnings, conventions, and decisions, see the
-shared memory vault at `/home/hermes/wiki/`. Read `index.md` and `log.md` for
+shared memory vault (`$HERMES_VAULT_ROOT`). Read `index.md` and `log.md` for
 orientation. Project-specific context (above) is separate from vault context.
 
 ## Agent Learnings
