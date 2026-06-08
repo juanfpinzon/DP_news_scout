@@ -1,8 +1,8 @@
 # Digital Procurement News Scout (DPNS) Agent Context
 
-This is the shared agent brief for the repo. `AGENTS.md`, `CLAUDE.md`, and
-`.hermes.md` must remain byte-for-byte identical so every agent entrypoint
-operates with the same project context.
+> **Canonical agent context file.** `AGENTS.md` and `.hermes.md` are symlinks
+> to this file (`CLAUDE.md`). Edit `CLAUDE.md` directly — never edit the
+> other two independently.
 
 ## Project Summary
 
@@ -57,9 +57,9 @@ Entry point: `python -m src.main`
 
 ```text
 dpns/
-├── AGENTS.md                   # Shared agent brief
-├── CLAUDE.md                   # Shared agent brief
-├── .hermes.md                  # Shared agent brief
+├── AGENTS.md                   # → symlink to CLAUDE.md
+├── CLAUDE.md                   # Canonical agent context (edit here)
+├── .hermes.md                  # → symlink to CLAUDE.md
 ├── DESIGN.md                   # Visual / UX design decisions
 ├── PRD.md                      # Product requirements
 ├── PLAN.md                     # Implementation plan
@@ -302,3 +302,16 @@ Reference these IDs when building or reviewing features:
 - Slack/Teams delivery
 - Personalized digests per reader
 - Real-time breaking news alerts
+
+## Cross-Project Context
+
+For durable cross-project learnings, conventions, and decisions, see the
+shared memory vault at `$HERMES_VAULT_ROOT`. Read `index.md` and `log.md` for
+orientation. Project-specific context (above) is separate from vault context.
+
+## Agent Learnings
+
+Agent-learned facts propagated from the shared vault by vaultwatch appear below.
+Do not edit this section manually — it is managed by the vaultwatch cron.
+
+*(No learnings synced yet.)*
