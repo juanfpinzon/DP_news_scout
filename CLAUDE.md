@@ -314,4 +314,11 @@ orientation. Project-specific context (above) is separate from vault context.
 Agent-learned facts propagated from the shared vault by vaultwatch appear below.
 Do not edit this section manually — it is managed by the vaultwatch cron.
 
-*(No learnings synced yet.)*
+- (2026-06-04) [hermes] closed-loop-agent-context-sync — see vault `vault-protocol`
+- (2026-06-05) [hermes] agent-context-canonical-convention — see vault `AGENTS.md`
+- (2026-06-07) [claude-code] claude-code-notion-mcp-setup — see vault `claude-code-notion-mcp`
+- (2026-06-12) [claude-code] incremental-implementation-preference — see vault `juan`
+- (2026-06-12) [claude-code] gh-watchdog-direct-push-to-pr-branch — see vault `gh-watchdog`
+- (2026-06-17) [claude-code] hermes-vm-laptop-launcher — see vault `hermes-desktop-remote-mode`
+- (2026-06-22) [claude-code] architect-loop-skill-overlay-and-diagram-gotcha — see vault `architect-loop-fork`
+- (2026-06-22) [hermes] kb-drift-review-workflow — see vault `marca-ia-seo-aeo-geo-kb`
