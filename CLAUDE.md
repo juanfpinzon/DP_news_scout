@@ -315,3 +315,4 @@ Agent-learned facts propagated from the shared vault by vaultwatch appear below.
 Do not edit this section manually — it is managed by the vaultwatch cron.
 
 - (2026-07-06) [claude-code] claude-skills-c-level-advisor-bundle-install — see vault `claude-skills-repo-evaluation`
+- (2026-09-07) [claude-code] homelab-proxmox-constraints — see vault `homelab-proxmox`
