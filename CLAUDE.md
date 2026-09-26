@@ -314,4 +314,7 @@ orientation. Project-specific context (above) is separate from vault context.
 Agent-learned facts propagated from the shared vault by vaultwatch appear below.
 Do not edit this section manually — it is managed by the vaultwatch cron.
 
-*(No learnings synced yet.)*
+- (2026-07-06) [claude-code] claude-skills-c-level-advisor-bundle-install — see vault `claude-skills-repo-evaluation`
+- (2026-09-07) [claude-code] homelab-proxmox-constraints — see vault `homelab-proxmox`
+- (2026-09-26) [hermes] procurerag-north-star — see vault `procurerag`
+- (2026-09-18) [claude-code] homelab-fikwot-dataset-loss-and-bridge — see vault `homelab-proxmox`
